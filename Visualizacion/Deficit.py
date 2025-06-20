@@ -127,8 +127,7 @@ def analizar_plantas_deficit(entradas, df):
         # Solo incluir plantas termoeléctricas válidas
         valid_plants = ["Todas las plantas"] + sorted(set(df_plantas["planta"].unique()) & set(get_valid_plant_names()))
         planta_seleccionada = st.selectbox("Seleccionar planta para análisis", valid_plants)
-        
-        # Si se seleccionó una planta específica, mostrar análisis detallado
+          # Si se seleccionó una planta específica, mostrar análisis detallado
         if planta_seleccionada != "Todas las plantas":
             # Filtrar datos solo para la planta seleccionada
             df_planta = df_plantas[df_plantas["planta"] == planta_seleccionada]
@@ -184,10 +183,19 @@ def analizar_plantas_deficit(entradas, df):
                             value=f"{int(deficit_mediana_planta)} MW" if not pd.isna(deficit_mediana_planta) else "N/D"
                         )
                         
-                        st.metric(
-                            label=f"Desviación estándar",
-                            value=f"{int(desviacion_std)} MW" if not pd.isna(desviacion_std) else "N/D"
-                        )
+                        # Calcular cantidad promedio de unidades afectadas
+                        if "cant_plantas_averia" in df_planta_sin_na.columns:
+                            unidades_promedio = df_planta_sin_na["cant_plantas_averia"].mean()
+                            st.metric(
+                                label=f"Unidades afectadas (promedio)",
+                                value=f"{unidades_promedio:.1f}" if not pd.isna(unidades_promedio) else "N/D"
+                            )
+                        else:
+                            st.metric(
+                                label=f"Unidades afectadas",
+                                value="N/D",
+                                help="Información no disponible"
+                            )
                     
                     # Preparar datos para visualizaciones, ordenados por fecha
                     df_plot = df_planta.sort_values("fecha").copy()
@@ -236,24 +244,8 @@ def analizar_plantas_deficit(entradas, df):
                             
                             # Preparar datos para visualización
                             resumen_mensual.columns = ["Mes", "Déficit Promedio", "Déficit Máximo", "Déficit Mínimo", "Días en Avería"]
-                            
-                            # Mostrar como tabla interactiva
+                              # Mostrar como tabla interactiva
                             st.dataframe(resumen_mensual, use_container_width=True)
-                            
-                            # Gráfico de línea para evolución mensual (sin puntos)
-                            fig_mensual = px.line(
-                                resumen_mensual,
-                                x="Mes",
-                                y="Déficit Promedio",
-                                markers=False,  # Sin marcadores (puntos)
-                                title=f"Déficit promedio mensual cuando {planta_seleccionada} está en avería",
-                                labels={"Mes": "Mes", "Déficit Promedio": "Déficit promedio (MW)"}
-                            )
-                            
-                            # Configurar línea sin puntos
-                            fig_mensual.update_traces(mode='lines', line=dict(width=2.5))
-                            fig_mensual.update_layout(height=300)
-                            st.plotly_chart(fig_mensual, use_container_width=True)
                         else:
                             st.warning("No hay datos de déficit no nulos para esta planta.")
                     else:
@@ -272,8 +264,7 @@ def analizar_plantas_deficit(entradas, df):
             ["Tabla de frecuencias", "Gráfico de barras"],
             key="vista_analisis_plantas"
         )
-        
-        # Mostrar visualización según selección
+          # Mostrar visualización según selección
         if not df_freq.empty:
             # Filtrar para mostrar solo plantas termoeléctricas válidas
             df_freq_filtrado = df_freq[df_freq.index.isin(get_valid_plant_names())]
@@ -281,7 +272,54 @@ def analizar_plantas_deficit(entradas, df):
             if vista_seleccionada == "Tabla de frecuencias":
                 st.write("Frecuencia de averías por planta:")
                 try:
-                    st.dataframe(df_freq_filtrado.sort_values('días_en_avería', ascending=False), use_container_width=True)
+                    # Crear una copia para personalizar el formato
+                    df_display = df_freq_filtrado.sort_values('días_en_avería', ascending=False).copy()
+                    df_display = df_display.reset_index()
+                    
+                    # Aplicar estilo con gradiente de color
+                    def aplicar_gradiente(val):
+                        if pd.isna(val):
+                            return ''
+                        max_val = df_display['días_en_avería'].max()
+                        min_val = df_display['días_en_avería'].min()
+                        if max_val == min_val:
+                            intensity = 0.5
+                        else:
+                            intensity = (val - min_val) / (max_val - min_val)
+                        # Gradiente de amarillo claro a rojo oscuro
+                        red = int(255)
+                        green = int(255 * (1 - intensity * 0.8))  # Reduce el verde gradualmente
+                        blue = int(255 * (1 - intensity))  # Reduce el azul gradualmente
+                        return f'background-color: rgb({red}, {green}, {blue}); color: #333; font-weight: bold;'
+                    
+                    # Aplicar estilo a la columna de días en avería
+                    styled_df = df_display.style.applymap(
+                        aplicar_gradiente, 
+                        subset=['días_en_avería']
+                    ).applymap(
+                        lambda x: 'color: #333; font-weight: bold;' if isinstance(x, str) else '',
+                        subset=['planta']
+                    )
+                    
+                    # Mostrar la tabla estilizada
+                    st.dataframe(
+                        styled_df,
+                        use_container_width=True,
+                        column_config={
+                            "planta": st.column_config.TextColumn(
+                                "Planta Termoeléctrica",
+                                help="Nombre de la planta termoeléctrica",
+                                width="large"
+                            ),
+                            "días_en_avería": st.column_config.NumberColumn(
+                                "Días en Avería",
+                                help="Número de días que la planta estuvo en avería",
+                                format="%d días",
+                                width="medium"
+                            )
+                        },
+                        hide_index=True
+                    )
                 except Exception as e:
                     st.error(f"Error al mostrar tabla: {str(e)}")
                     # Mostrar tabla simple como fallback
@@ -296,168 +334,8 @@ def analizar_plantas_deficit(entradas, df):
                     title="Top 10 plantas con más días en avería",
                     labels={'días_en_avería': 'Días en avería', 'planta': 'Planta'},
                     height=400
-                )
+                )                
                 st.plotly_chart(fig, use_container_width=True)
-
-def analizar_distribucion_temporal_deficit(df):
-    """
-    Analiza la distribución temporal del déficit por meses y estacionalidad
-    Args:
-        df (pd.DataFrame): DataFrame con datos de déficit procesados
-    """
-    st.subheader("Distribución Temporal del Déficit")
-      # Usar la función de utilidad para analizar distribución temporal
-    deficit_por_mes, deficit_por_año_mes = analizar_distribucion_temporal(df, "deficit")
-    
-    if deficit_por_mes is None or deficit_por_año_mes is None:
-        st.warning("No hay datos suficientes para el análisis de distribución temporal.")
-        return
-    
-    # Análisis por mes
-    st.write("#### Déficit por mes")
-    
-    # Obtener DataFrame filtrado para graficar (solo meses con datos)
-    df_para_grafico = deficit_por_mes[deficit_por_mes['conteo'] > 0].copy()
-    
-    # Verificar que hay datos para graficar
-    if not df_para_grafico.empty:
-        # Crear gráfico de barras (como fue solicitado)
-        fig = px.bar(
-            df_para_grafico,
-            x='mes_nombre',
-            y='deficit_promedio',
-            labels={'mes_nombre': 'Mes', 'deficit_promedio': 'Déficit (MW)'},
-            title="Déficit promedio por mes",
-            text_auto='.0f',  # Mostrar valores en barras sin decimales
-            color='deficit_promedio',
-            color_continuous_scale='Reds'
-        )
-        
-        # Mostrar el número de registros por mes como información adicional
-        fig.update_traces(
-            hovertemplate='<b>%{x}</b><br>Déficit promedio: %{y:.0f} MW<br>Registros: %{customdata}<extra></extra>',
-            customdata=df_para_grafico['conteo']
-        )
-        
-        # Mejorar diseño
-        fig.update_layout(
-            xaxis_title="Mes",
-            yaxis_title="Déficit promedio (MW)",
-            height=400
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # También mostramos tabla con datos para verificación
-        st.write("Desglose de datos de déficit por mes:")
-        
-        # Formato para mostrar
-        tabla_meses = df_para_grafico[['mes_nombre', 'deficit_promedio', 'conteo']]
-        tabla_meses = tabla_meses.rename(columns={
-            'mes_nombre': 'Mes', 
-            'deficit_promedio': 'Déficit promedio (MW)',
-            'conteo': 'Días con datos'
-        })
-        
-        # Formatear valores numéricos
-        tabla_meses['Déficit promedio (MW)'] = tabla_meses['Déficit promedio (MW)'].map('{:.0f}'.format)
-        
-        st.dataframe(tabla_meses, use_container_width=True, hide_index=True)
-    else:
-        st.warning("No hay suficientes datos para mostrar el análisis por mes.")      # Análisis de tendencia anual
-    st.write("#### Tendencia anual del déficit")
-    
-    try:
-          # Verificar valores máximos para asegurar que están siendo considerados
-        st.info(f"Déficit máximo en el período analizado por año-mes: {int(deficit_por_año_mes['deficit_max'].max())} MW")
-        
-        # Crear gráfico de tendencia usando la función de utilidad
-        fig = crear_grafico_linea_plotly(
-            df=deficit_por_año_mes,
-            x_column='año_mes',
-            y_column='deficit_promedio',
-            title="Tendencia del déficit por año y mes",
-            color='red',
-            show_markers=False
-        )
-        
-        # Personalizar hover
-        fig.update_traces(
-            hovertemplate='<b>%{x|%b %Y}</b><br>Déficit promedio: %{y:.0f} MW<br>Registros: %{customdata}<extra></extra>',
-            customdata=deficit_por_año_mes['conteo']
-        )
-        
-        # Establecer límites Y para mostrar todos los valores
-        y_max = max(2000, int(deficit_por_año_mes['deficit_max'].max() * 1.1))
-        fig.update_layout(yaxis=dict(range=[0, y_max]))
-        
-        # Mejorar formato de fechas
-        fig.update_xaxes(
-            dtick="M3",  # Mostrar cada 3 meses
-            tickformat="%b\n%Y"
-        )
-          # Añadir línea de tendencia
-        if len(deficit_por_año_mes) > 1:
-            from scipy import stats
-            
-            # Convertir fechas a números ordinales para regresión lineal
-            x = [(d - pd.Timestamp("1970-01-01")).days for d in deficit_por_año_mes['año_mes']]
-            y = deficit_por_año_mes['deficit_promedio'].values  # Columna renombrada
-            
-            # Calcular regresión lineal
-            slope, intercept, r_value, p_value, std_err = stats.linregress(x, y)
-            
-            # Generar puntos para la línea de tendencia
-            x_trend = [min(x), max(x)]
-            y_trend = [slope * xi + intercept for xi in x_trend]
-            
-            # Convertir x de nuevo a fechas
-            x_dates = [pd.Timestamp("1970-01-01") + pd.Timedelta(days=int(xi)) for xi in x_trend]
-            
-            # Añadir línea de tendencia
-            fig.add_trace(go.Scatter(
-                x=x_dates, 
-                y=y_trend,
-                mode='lines',
-                name='Tendencia',
-                line=dict(color='black', width=2, dash='dash')
-            ))
-        
-        st.plotly_chart(fig, use_container_width=True)
-          # Añadir estadísticas de tendencia
-        if len(deficit_por_año_mes) > 1:
-            tendencia = "creciente" if slope > 0 else "decreciente"
-            cambio_mensual = slope * 30  # Cambio aproximado por mes
-            
-            st.write(f"""
-            **Análisis de tendencia:**
-            
-            - Tendencia: {tendencia}
-            - Cambio promedio mensual: {abs(cambio_mensual):.1f} MW {'más' if slope > 0 else 'menos'} por mes
-            - Coeficiente de determinación (R²): {r_value**2:.2f}
-            - Déficit máximo registrado en el período: {int(deficit_por_año_mes['deficit_max'].max())} MW
-            """)
-    except Exception as e:
-        st.error(f"Error al generar el análisis de tendencia: {str(e)}")
-        import traceback
-        st.write(traceback.format_exc())
-
-def preparar_datos_detallados(df, filtro_año=None):
-    """
-    Prepara los datos para la visualización detallada, aplicando filtros si es necesario
-    Args:
-        df (pd.DataFrame): DataFrame con datos de déficit
-        filtro_año (str, opcional): Año para filtrar los datos
-    Returns:
-        pd.DataFrame: DataFrame filtrado con datos detallados
-    """
-    df_filtrado = df.copy()
-    
-    # Filtrar por año si se especifica
-    if filtro_año and filtro_año != "Todos los años":
-        df_filtrado = df_filtrado[df_filtrado.index.year == int(filtro_año)]
-    
-    return df_filtrado
 
 def mostrar_tabla_datos_detallados(df):
     """
@@ -575,12 +453,19 @@ def mostrar_tabla_datos_detallados(df):
         df_formato["enlace"] = df_formato["enlace"].apply(
             lambda x: f"[Ver noticia]({x})" if isinstance(x, str) and x.startswith("http") else ""
         )
-    
-    # Mostrar la tabla con columnas renombradas
+      # Mostrar la tabla con columnas renombradas y configuración personalizada
     st.dataframe(
         df_formato.rename(columns={c: nombres_columnas.get(c, c) for c in df_formato.columns}), 
         use_container_width=True,
-        hide_index=True
+        hide_index=True,
+        column_config={
+            "Déficit (MW)": st.column_config.NumberColumn(
+                "Déficit (MW)",
+                help="Déficit energético en MW",
+                format="%d",
+                width="medium"
+            )
+        }
     )
     
     # Botón para descargar datos
@@ -625,8 +510,7 @@ def app():
     if df_completo.empty:
         st.error("No hay datos disponibles para analizar.")
         return
-    
-    # Añadir selector de fechas al inicio
+      # Añadir selector de fechas al inicio
     st.write("### Selecciona el rango de fechas a analizar")
     
     try:
@@ -635,7 +519,7 @@ def app():
     except Exception as e:
         st.error(f"Error al determinar el rango de fechas: {str(e)}")
         return
-    
+
     col1, col2, col3 = st.columns([2, 2, 1])
     with col1:
         fecha_inicio = st.date_input(
@@ -647,10 +531,12 @@ def app():
         )
     
     with col2:
+        # Asegurar que la fecha fin no sea anterior a la fecha inicio
+        min_fecha_fin = max(fecha_min, fecha_inicio) if fecha_inicio else fecha_min
         fecha_fin = st.date_input(
             "Fecha de fin",
             value=fecha_max,
-            min_value=fecha_min,
+            min_value=min_fecha_fin,
             max_value=fecha_max,
             key="fecha_fin_deficit"
         )
@@ -659,7 +545,12 @@ def app():
         if st.button("Ver todo", key="ver_todo_deficit"):
             fecha_inicio = fecha_min
             fecha_fin = fecha_max
-            st.experimental_rerun()
+            st.rerun()
+    
+    # Validar que el rango de fechas sea válido
+    if fecha_inicio > fecha_fin:
+        st.error("La fecha de inicio no puede ser posterior a la fecha de fin.")
+        return
     
     # Filtrar dataframe según el rango de fechas seleccionado
     inicio_dt = datetime.combine(fecha_inicio, datetime.min.time())
@@ -716,20 +607,17 @@ def app():
     )
     
     st.plotly_chart(fig, use_container_width=True)
-    
-    # Crear pestañas para cada tipo de análisis
-    tab1, tab2, tab3, tab4 = st.tabs([
+      # Crear pestañas para cada tipo de análisis
+    tab1, tab2, tab3 = st.tabs([
         "Estadísticas", 
         "Relación con Plantas", 
-        "Distribución Temporal",
         "Datos Detallados"
     ])
     
     with tab1:
         # Mostrar estadísticas del período seleccionado
         mostrar_indicadores_deficit(df)
-        
-        # Análisis por días de la semana
+          # Análisis por días de la semana
         st.subheader("Déficit por día de la semana")
         
         # Agrupar por día de la semana
@@ -747,8 +635,67 @@ def app():
         # Convertir a día de la semana si no existe
         if "dia_semana" not in df.columns:
             df.loc[:, "dia_semana"] = df.index.strftime('%A')  # Día de la semana en inglés
+        
+        # Filtrar solo registros con déficit válido
+        df_dias_valido = df.dropna(subset=["deficit"])
+        
+        if not df_dias_valido.empty:
+            # Agrupar por día de la semana y calcular estadísticas
+            stats_dias = df_dias_valido.groupby("dia_semana")["deficit"].agg(['mean', 'min', 'max', 'count']).reset_index()
+            stats_dias.columns = ['dia_semana', 'deficit_promedio', 'deficit_min', 'deficit_max', 'conteo']
             
-        # Análisis por mes
+            # Traducir a español y ordenar
+            stats_dias['dia_nombre'] = stats_dias['dia_semana'].map(dias_semana_es)
+            stats_dias['orden'] = stats_dias['dia_semana'].map({dia: i for i, dia in enumerate(dias_semana_orden)})
+            stats_dias = stats_dias.sort_values('orden')            # Crear gráfico de barras con color rojo uniforme
+            fig_dias = go.Figure()
+            
+            # Barra que va hasta el máximo con color rojo uniforme
+            fig_dias.add_trace(go.Bar(
+                x=stats_dias['dia_nombre'],
+                y=stats_dias['deficit_max'],
+                name='Déficit Máximo',
+                marker=dict(
+                    color='red',
+                    line=dict(width=0)
+                ),
+                text=[f'{val:.0f} MW' for val in stats_dias['deficit_max']],
+                textposition='outside',
+                hovertemplate='<b>%{x}</b><br>Máximo: %{y:.0f} MW<extra></extra>',
+                showlegend=False
+            ))
+            
+            # Líneas discontinuas para el promedio (verde) y mínimo (azul claro)
+            for i, row in stats_dias.iterrows():
+                # Línea verde discontinua para la media
+                fig_dias.add_shape(
+                    type="line",
+                    x0=i-0.4, x1=i+0.4,
+                    y0=row['deficit_promedio'], y1=row['deficit_promedio'],
+                    line=dict(color="green", width=3, dash="dash"),
+                )
+                
+                # Línea azul claro discontinua para el mínimo
+                fig_dias.add_shape(
+                    type="line",
+                    x0=i-0.4, x1=i+0.4,
+                    y0=row['deficit_min'], y1=row['deficit_min'],
+                    line=dict(color="lightblue", width=3, dash="dash"),
+                )
+            
+            # Ajustar el rango del eje Y para dar más espacio
+            y_max_dias = stats_dias['deficit_max'].max() * 1.2
+            
+            fig_dias.update_layout(
+                xaxis_title="Día de la semana",
+                yaxis_title="Déficit (MW)",
+                yaxis=dict(range=[0, y_max_dias]),
+                height=400,
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig_dias, use_container_width=True)
+              # Análisis por mes
         st.subheader("Déficit por mes")
         
         # Añadir columna de mes si no existe
@@ -771,68 +718,81 @@ def app():
             "November": "Noviembre",
             "December": "Diciembre"
         }
-          # Usar la función de utilidad para analizar los datos (solo si no lo hemos hecho antes)
-        if 'deficit_por_mes' not in locals() or deficit_por_mes is None:
-            deficit_por_mes, _ = analizar_distribucion_temporal(df, "deficit")
-            if deficit_por_mes is None:
-                st.warning("No hay datos suficientes para crear gráficos mensuales.")
-                return
         
-        # Crear dataframe solo con los meses que tienen datos
-        meses_con_datos = deficit_por_mes[deficit_por_mes['conteo'] > 0].copy()
+        # Usar la función de utilidad para analizar los datos
+        deficit_por_mes, _ = analizar_distribucion_temporal(df, "deficit")
         
-        # Crear gráfico de línea usando nuestra función de utilidad
-        fig_meses = crear_grafico_linea_plotly(
-            df=meses_con_datos,
-            x_column='mes_nombre',
-            y_column='deficit_promedio',
-            title='Déficit promedio por mes',
-            color='red',
-            show_markers=False
-        )
-        
-        # Asegurar que solo muestre líneas, sin puntos
-        fig_meses.update_traces(mode='lines', line=dict(width=2.5, color='red'))
-        
-        # Mejorar diseño
-        fig_meses.update_layout(
-            xaxis_title="Mes",
-            yaxis_title="Déficit promedio (MW)",
-            height=400
-        )
-        
-        st.plotly_chart(fig_meses, use_container_width=True)
-        
-        # Añadir información sobre los datos
-        with st.expander("Información sobre los datos"):
-            st.write("""            ### Fuente de datos
-            Los datos de déficit se extraen ÚNICAMENTE de la sección "prediccion" en los reportes diarios,
-            específicamente del campo "deficit". No se realizan cálculos alternativos y los registros
-            sin valor de déficit en esta sección son omitidos del análisis.
+        if deficit_por_mes is not None:
+            # Crear dataframe solo con los meses que tienen datos
+            meses_con_datos = deficit_por_mes[deficit_por_mes['conteo'] > 0].copy()
             
-            ### Ejemplo de estructura de datos
-            ```json
-            {
-                "prediccion": {
-                    "disponibilidad": 2053,
-                    "demanda_maxima": 3400,
-                    "afectacion": 1417,
-                    "deficit": 1347,
-                    "respaldo": null,
-                    "horario_pico": "noche"
-                }
-            }
-            ```
-            """)
+            if not meses_con_datos.empty:
+                # Agregar estadísticas adicionales (min/max por mes)
+                df_mes_valido = df.dropna(subset=["deficit"])
+                if not df_mes_valido.empty:
+                    df_mes_valido.loc[:, 'mes_nombre'] = df_mes_valido.index.strftime('%B')
+                    stats_meses_detalle = df_mes_valido.groupby("mes_nombre")["deficit"].agg(['mean', 'min', 'max', 'count']).reset_index()
+                    stats_meses_detalle.columns = ['mes_nombre', 'deficit_promedio', 'deficit_min', 'deficit_max', 'conteo']
+                    
+                    # Traducir nombres a español
+                    stats_meses_detalle['mes_nombre_es'] = stats_meses_detalle['mes_nombre'].map(meses_es)                    # Crear gráfico de barras con color rojo uniforme
+                    fig_meses = go.Figure()
+                    
+                    # Barra que va hasta el máximo con color rojo uniforme
+                    fig_meses.add_trace(go.Bar(
+                        x=stats_meses_detalle['mes_nombre_es'],
+                        y=stats_meses_detalle['deficit_max'],
+                        name='Déficit Máximo',
+                        marker=dict(
+                            color='red',
+                            line=dict(width=0)
+                        ),
+                        text=[f'{val:.0f} MW' for val in stats_meses_detalle['deficit_max']],
+                        textposition='outside',
+                        hovertemplate='<b>%{x}</b><br>Máximo: %{y:.0f} MW<extra></extra>',
+                        showlegend=False
+                    ))
+                    
+                    # Líneas discontinuas para el promedio (verde) y mínimo (azul claro)
+                    for i, row in stats_meses_detalle.iterrows():
+                        # Línea verde discontinua para la media
+                        fig_meses.add_shape(
+                            type="line",
+                            x0=i-0.4, x1=i+0.4,
+                            y0=row['deficit_promedio'], y1=row['deficit_promedio'],
+                            line=dict(color="green", width=3, dash="dash"),
+                        )
+                        
+                        # Línea azul claro discontinua para el mínimo
+                        fig_meses.add_shape(
+                            type="line",
+                            x0=i-0.4, x1=i+0.4,
+                            y0=row['deficit_min'], y1=row['deficit_min'],
+                            line=dict(color="lightblue", width=3, dash="dash"),
+                        )
+                    
+                    # Ajustar el rango del eje Y para dar más espacio
+                    y_max_meses = stats_meses_detalle['deficit_max'].max() * 1.2
+                    
+                    fig_meses.update_layout(
+                        xaxis_title="Mes",
+                        yaxis_title="Déficit (MW)",
+                        yaxis=dict(range=[0, y_max_meses]),
+                        height=400,
+                        showlegend=False
+                    )
+                    
+                    st.plotly_chart(fig_meses, use_container_width=True)
+                else:
+                    st.warning("No hay datos suficientes para crear gráficos mensuales.")
+            else:
+                st.warning("No hay datos suficientes para crear gráficos mensuales.")
+        else:            st.warning("No hay datos suficientes para crear gráficos mensuales.")
     
     with tab2:
         # Análisis de plantas y relación con déficit
         analizar_plantas_deficit(entradas, df)
     
     with tab3:
-        # Análisis de distribución temporal del déficit
-        analizar_distribucion_temporal_deficit(df)
-    
-    with tab4:
         # Tabla detallada de datos
         mostrar_tabla_datos_detallados(df)
