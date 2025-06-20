@@ -47,6 +47,103 @@ def preparar_dataframe_basico(entradas):
         })
     return pd.DataFrame(filas).set_index("fecha").sort_index()
 
+# Función para filtrar y preparar datos para análisis específicos
+def filtrar_datos_por_metrica(entradas, metrica="deficit"):
+    """
+    Filtra y procesa los datos para un tipo específico de análisis (deficit, disponibilidad, etc.)
+    
+    Args:
+        entradas (list): Lista de registros de datos eléctricos
+        metrica (str): La métrica a extraer y procesar (deficit, disponibilidad, etc.)
+    
+    Returns:
+        pd.DataFrame: DataFrame con datos procesados para análisis de la métrica solicitada
+    """
+    filas = []
+    for e in entradas:
+        # Extraer datos únicamente de la sección "prediccion" del JSON
+        pred = e["datos"].get("prediccion", {})
+        
+        # Obtener el valor específico de la métrica
+        valor_metrica = pred.get(metrica)
+        
+        # Si no hay datos de la métrica solicitada, omitir el registro
+        if valor_metrica is None:
+            continue
+            
+        # Datos básicos que siempre incluimos
+        datos_basicos = {
+            "fecha": e["fecha"],
+            "demanda": pred.get("demanda_maxima"),
+            "enlace": e.get("enlace", "")
+        }
+        
+        # Agregar la métrica solicitada y cualquier dato relacionado
+        if metrica == "deficit":
+            # Cálculo de porcentaje de déficit
+            porcentaje = None
+            demanda = pred.get("demanda_maxima")
+            if valor_metrica is not None and demanda is not None and demanda > 0:
+                porcentaje = (valor_metrica / demanda) * 100
+                
+            # Procesar plantas en avería para análisis de déficit
+            plantas_averia = e["datos"].get("plantas", {}).get("averia", [])
+            plantas_estandarizadas = set()
+            from .plant_standardizer import get_canonical_plant_name
+            
+            for p in plantas_averia:
+                planta_nombre = p.get("planta")
+                if planta_nombre:
+                    nombre_canonico = get_canonical_plant_name(planta_nombre)
+                    if nombre_canonico:  # Solo añadir si es un nombre válido
+                        plantas_estandarizadas.add(nombre_canonico)
+            
+            # Extender datos con información específica de déficit
+            datos_metrica = {
+                "deficit": valor_metrica,
+                "porcentaje_deficit": porcentaje,
+                "disponibilidad": pred.get("disponibilidad"),
+                "afectacion": pred.get("afectacion"),
+                "respaldo": pred.get("respaldo"),
+                "dia_semana": e["fecha"].strftime('%A'),
+                "mes": e["fecha"].strftime('%B'),
+                "año": e["fecha"].year,
+                "plantas_averia": list(plantas_estandarizadas)
+            }
+        elif metrica == "disponibilidad":
+            # Datos específicos para análisis de disponibilidad
+            datos_metrica = {
+                "disponibilidad": valor_metrica,
+                "afectacion": pred.get("afectacion"),
+                "deficit": pred.get("deficit"),
+                "respaldo": pred.get("respaldo"),
+                "dia_semana": e["fecha"].strftime('%A'),
+                "mes": e["fecha"].strftime('%B'),
+                "año": e["fecha"].year,
+            }
+        else:
+            # Para cualquier otra métrica, simplemente incluimos su valor
+            datos_metrica = {metrica: valor_metrica}
+        
+        # Combinar datos básicos con datos específicos de la métrica
+        datos_completos = {**datos_basicos, **datos_metrica}
+        filas.append(datos_completos)
+    
+    # Crear DataFrame y establecer fecha como índice
+    df = pd.DataFrame(filas)
+    if not df.empty:
+        df = df.set_index("fecha").sort_index()
+        
+        # Reemplazar NaN con None para mejor manejo en las visualizaciones
+        df = df.replace({pd.NA: None})
+        
+        # Agregar columnas de tendencia usando ventanas móviles si existe la métrica
+        if metrica in df.columns:
+            df[f'{metrica}_7d_avg'] = df[metrica].rolling(window=7, min_periods=1).mean()
+            df[f'{metrica}_30d_avg'] = df[metrica].rolling(window=30, min_periods=1).mean()
+    
+    return df
+
 # Preparar datos para energía solar
 def preparar_datos_solares(entradas):
     filas = []
@@ -236,3 +333,162 @@ def get_color_palette(n_colors=3, palette_type="sequential"):
         return alt.Scale(scheme='redblue')
     else:  # categorical
         return alt.Scale(scheme='category10')
+
+# Función para preparar datos para análisis de plantas en relación al déficit
+def preparar_datos_plantas_deficit(df):
+    """
+    Prepara datos para análisis de relación entre plantas en avería y déficit energético
+    
+    Args:
+        df (pd.DataFrame): DataFrame con datos de déficit que incluye la columna 'plantas_averia'
+    
+    Returns:
+        pd.DataFrame: DataFrame con datos de plantas y su relación con el déficit,
+                    o None si no hay datos suficientes
+    """
+    if 'plantas_averia' not in df.columns:
+        return None
+    
+    # Crear DataFrame para análisis de frecuencia
+    filas_plantas = []
+    for fecha, row in df.iterrows():
+        plantas = row.get('plantas_averia', [])
+        if not plantas or not isinstance(plantas, list):
+            continue
+        for planta in plantas:
+            filas_plantas.append({
+                "fecha": fecha,
+                "planta": planta,
+                "deficit": row.get('deficit')  # Guardar el déficit para análisis por planta
+            })
+    
+    if not filas_plantas:
+        return None
+    
+    df_plantas = pd.DataFrame(filas_plantas)
+    return df_plantas
+
+# Función para analizar distribución temporal de cualquier métrica
+def analizar_distribucion_temporal(df, metrica):
+    """
+    Analiza la distribución temporal de una métrica (déficit, disponibilidad, etc.)
+    
+    Args:
+        df (pd.DataFrame): DataFrame con los datos a analizar
+        metrica (str): Nombre de la columna con la métrica a analizar
+        
+    Returns:
+        tuple: Tuplas de DataFrames con análisis (metrica_por_mes, metrica_por_año_mes)
+    """
+    if metrica not in df.columns or df.empty:
+        return None, None
+    
+    # Filtrar datos no nulos para análisis
+    df_analisis = df.dropna(subset=[metrica]).copy()
+    
+    if df_analisis.empty:
+        return None, None
+    
+    # Mapping para traducir los nombres de los meses
+    meses = {
+        'January': 'Enero',
+        'February': 'Febrero',
+        'March': 'Marzo',
+        'April': 'Abril',
+        'May': 'Mayo',
+        'June': 'Junio',
+        'July': 'Julio',
+        'August': 'Agosto',
+        'September': 'Septiembre',
+        'October': 'Octubre',
+        'November': 'Noviembre',
+        'December': 'Diciembre'
+    }
+    
+    # Crear columna de mes numérico y nombre
+    df_analisis.loc[:, "mes_num"] = df_analisis.index.month
+    df_analisis.loc[:, "mes_nombre"] = df_analisis.index.strftime('%B').map(meses)
+    
+    # Calcular métrica promedio por mes
+    metrica_por_mes = df_analisis.groupby('mes_num').agg({
+        metrica: ['mean', 'count']  # Media y conteo de registros por mes
+    })
+    
+    # Aplanar MultiIndex
+    metrica_por_mes.columns = [f'{metrica}_promedio', 'conteo']
+    metrica_por_mes = metrica_por_mes.reset_index()
+    
+    # Crear nombres de meses y añadir a dataframe
+    meses_orden = list(range(1, 13))
+    metrica_por_mes['mes_nombre'] = metrica_por_mes['mes_num'].apply(
+        lambda m: meses[datetime(2022, m, 1).strftime('%B')]
+    )
+    
+    # Análisis de tendencia por año-mes
+    df_analisis.loc[:, "año_mes"] = df_analisis.index.strftime('%Y-%m')
+    
+    # Calcular promedio y conteo por año-mes
+    metrica_por_año_mes = df_analisis.groupby('año_mes').agg({
+        metrica: ['mean', 'count', 'max']  # Media, conteo y máximo
+    }).reset_index()
+    
+    # Aplanar columnas
+    metrica_por_año_mes.columns = ['año_mes', f'{metrica}_promedio', 'conteo', f'{metrica}_max']
+    
+    # Convertir a formato de fecha
+    metrica_por_año_mes['año_mes'] = pd.to_datetime(metrica_por_año_mes['año_mes'] + '-01')
+    
+    # Ordenar cronológicamente
+    metrica_por_año_mes = metrica_por_año_mes.sort_values('año_mes')
+    
+    return metrica_por_mes, metrica_por_año_mes
+
+# Función para crear gráfico temporal con plotly
+def crear_grafico_linea_plotly(df, x_column, y_column, title=None, color=None, show_markers=False):
+    """
+    Crea un gráfico de línea usando plotly
+    
+    Args:
+        df (pd.DataFrame): DataFrame con los datos
+        x_column (str): Columna para el eje X
+        y_column (str): Columna para el eje Y
+        title (str): Título del gráfico
+        color (str): Color de la línea
+        show_markers (bool): Si se muestran o no los marcadores
+        
+    Returns:
+        plotly.graph_objects.Figure: Figura de plotly
+    """
+    import plotly.express as px
+    
+    # Determinar el modo (con o sin marcadores)
+    mode = 'lines+markers' if show_markers else 'lines'
+    
+    # Configurar colores
+    if color is None:
+        color_sequence = ['red'] if y_column == 'deficit' else ['blue']
+    else:
+        color_sequence = [color]
+    
+    # Crear el gráfico
+    fig = px.line(
+        df,
+        x=x_column,
+        y=y_column,
+        markers=show_markers,
+        color_discrete_sequence=color_sequence,
+        title=title,
+    )
+    
+    # Configurar línea sin puntos si no hay marcadores
+    fig.update_traces(
+        mode=mode, 
+        line=dict(width=2.5)
+    )
+    
+    # Mejorar diseño
+    fig.update_layout(
+        height=400
+    )
+    
+    return fig

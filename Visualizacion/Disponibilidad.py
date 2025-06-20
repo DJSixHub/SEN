@@ -2,18 +2,11 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 from datetime import datetime, date
-from .utils import cargar_datos
+from .utils import cargar_datos, filtrar_datos_por_metrica
 
 def preparar_dataframe(entradas):
-    filas = []
-    for e in entradas:
-        pred = e["datos"].get("prediccion", {})
-        filas.append({
-            "fecha": e["fecha"],
-            "disponibilidad": pred.get("disponibilidad"),
-            "demanda": pred.get("demanda_maxima")
-        })
-    return pd.DataFrame(filas).set_index("fecha").sort_index()
+    # Utiliza la función centralizada de utils.py para filtrar y procesar datos de disponibilidad
+    return filtrar_datos_por_metrica(entradas, "disponibilidad")
 
 def preparar_datos_solares(entradas):
     filas_gen = []
