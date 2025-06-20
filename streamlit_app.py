@@ -3,13 +3,20 @@ import sys
 import os
 import importlib
 
-# Configuración de la página
-st.set_page_config(
-    page_title="SENtinel",
-    page_icon=None,
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# Importar configuración
+from config import configure_streamlit, get_pandas_config, is_deployed
+
+# Configurar pandas
+get_pandas_config()
+
+# Configuración de la página - usar función de configuración
+configure_streamlit()
+
+# Mostrar información de entorno si estamos en local
+if not is_deployed():
+    st.sidebar.info("🏠 Ejecutándose en local")
+else:
+    st.sidebar.info("☁️ Ejecutándose en deploy")
 
 # Directorio principal
 current_dir = os.path.dirname(os.path.abspath(__file__))

@@ -291,12 +291,11 @@ def analizar_plantas_deficit(entradas, df):
                         green = int(255 * (1 - intensity * 0.8))  # Reduce el verde gradualmente
                         blue = int(255 * (1 - intensity))  # Reduce el azul gradualmente
                         return f'background-color: rgb({red}, {green}, {blue}); color: #333; font-weight: bold;'
-                    
-                    # Aplicar estilo a la columna de días en avería
-                    styled_df = df_display.style.applymap(
+                      # Aplicar estilo a la columna de días en avería
+                    styled_df = df_display.style.map(
                         aplicar_gradiente, 
                         subset=['días_en_avería']
-                    ).applymap(
+                    ).map(
                         lambda x: 'color: #333; font-weight: bold;' if isinstance(x, str) else '',
                         subset=['planta']
                     )
@@ -436,14 +435,16 @@ def mostrar_tabla_datos_detallados(df):
     }
     
     # Formatear para mejor visualización y manejo de NaN
-    df_formato = df_mostrar[columnas_disponibles].copy()
-    
-    # Reemplazar NaN con valores más descriptivos en formato texto
+    df_formato = df_mostrar[columnas_disponibles].copy()      # Reemplazar NaN con valores más descriptivos en formato texto
     for col in df_formato.columns:
         if col == "enlace":
             continue
-        if df_formato[col].dtype == float or df_formato[col].dtype == int:
+        # Usar pd.api.types.is_numeric_dtype para mejor compatibilidad
+        if pd.api.types.is_numeric_dtype(df_formato[col]):
+            # Reemplazar NaN con None primero, luego convertir a string
             df_formato[col] = df_formato[col].fillna("N/D")
+            # Asegurar que los valores numéricos válidos se mantengan como float
+            df_formato[col] = pd.to_numeric(df_formato[col], errors='coerce').fillna("N/D")
     
     # Mostrar DataFrame
     st.write(f"Mostrando {len(df_formato)} registros")

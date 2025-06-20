@@ -5,6 +5,22 @@ import numpy as np
 import streamlit as st
 from datetime import datetime, date
 import altair as alt
+
+# Importar configuración
+import sys
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+try:
+    from config import get_data_config
+except ImportError:
+    # Fallback si no se puede importar
+    def get_data_config():
+        return {
+            'use_arrow_backend': False,
+            'numeric_precision': 'float64',
+            'na_representation': None,
+            'string_na_replacement': 'N/D'
+        }
+
 def cargar_datos():
     base_dir = os.path.dirname(__file__)
     ruta = os.path.join(base_dir, os.pardir, "data", "processed", "datos_electricos_organizados.json")
@@ -43,7 +59,18 @@ def preparar_dataframe_basico(entradas):
             "deficit": pred.get("deficit"),
             "respaldo": pred.get("respaldo")
         })
-    return pd.DataFrame(filas).set_index("fecha").sort_index()
+    
+    df = pd.DataFrame(filas).set_index("fecha").sort_index()
+    
+    # Asegurar tipos de datos consistentes
+    if not df.empty:
+        df = df.replace({pd.NA: None, np.nan: None, float('nan'): None})
+        columnas_numericas = ['afectacion', 'disponibilidad', 'demanda', 'deficit', 'respaldo']
+        for col in columnas_numericas:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    return df
 
 # Función para filtrar y preparar datos para análisis específicos
 def filtrar_datos_por_metrica(entradas, metrica="deficit"):
@@ -73,11 +100,17 @@ def filtrar_datos_por_metrica(entradas, metrica="deficit"):
             demanda = pred.get("demanda_maxima")
             if valor_metrica is not None and demanda is not None and demanda > 0:
                 porcentaje = (valor_metrica / demanda) * 100
-                
-            # Procesar plantas en avería para análisis de déficit
+                  # Procesar plantas en avería para análisis de déficit
             plantas_averia = e["datos"].get("plantas", {}).get("averia", [])
             plantas_estandarizadas = set()
-            from .plant_standardizer import get_canonical_plant_name
+            try:
+                from .plant_standardizer import get_canonical_plant_name
+            except ImportError:
+                try:
+                    from plant_standardizer import get_canonical_plant_name
+                except ImportError:
+                    def get_canonical_plant_name(nombre):
+                        return nombre
             
             for p in plantas_averia:
                 planta_nombre = p.get("planta")
@@ -116,14 +149,18 @@ def filtrar_datos_por_metrica(entradas, metrica="deficit"):
         # Combinar datos básicos con datos específicos de la métrica
         datos_completos = {**datos_basicos, **datos_metrica}
         filas.append(datos_completos)
-    
-    # Crear DataFrame y establecer fecha como índice
+      # Crear DataFrame y establecer fecha como índice
     df = pd.DataFrame(filas)
     if not df.empty:
         df = df.set_index("fecha").sort_index()
         
-        # Reemplazar NaN con None para mejor manejo en las visualizaciones
-        df = df.replace({pd.NA: None})
+        # Reemplazar todos los tipos de NaN con None para mejor compatibilidad
+        df = df.replace({pd.NA: None, np.nan: None, float('nan'): None})
+          # Convertir columnas numéricas a float64 de forma explícita
+        columnas_numericas = ['demanda', 'deficit', 'disponibilidad', 'afectacion', 'respaldo', 'porcentaje_deficit']
+        for col in columnas_numericas:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce').astype('float64')
         
         # Agregar columnas de tendencia usando ventanas móviles si existe la métrica
         if metrica in df.columns:
@@ -133,7 +170,16 @@ def filtrar_datos_por_metrica(entradas, metrica="deficit"):
     return df
 
 # Preparar datos para energía solar
-from .plant_standardizer import get_canonical_plant_name
+try:
+    from .plant_standardizer import get_canonical_plant_name
+except ImportError:
+    # Fallback para importación directa
+    try:
+        from plant_standardizer import get_canonical_plant_name
+    except ImportError:
+        # Si no se puede importar, usar función dummy
+        def get_canonical_plant_name(nombre):
+            return nombre
 
 # Obtener lista de plantas
 def obtener_plantas(entradas):
@@ -424,6 +470,35 @@ def analizar_distribucion_temporal(df, metrica):
 # Función para crear gráfico temporal con plotly
 def crear_grafico_linea_plotly(df, x_column, y_column, title=None, color=None, show_markers=False):
     import plotly.express as px
+    import plotly.graph_objects as go
+    
+    # Crear una copia del DataFrame para evitar modificar el original
+    df_clean = df.copy()
+    
+    # Limpiar datos - eliminar filas donde y_column es None o NaN
+    df_clean = df_clean.dropna(subset=[y_column])
+    
+    # Asegurar que la columna y es numérica
+    df_clean[y_column] = pd.to_numeric(df_clean[y_column], errors='coerce')
+    df_clean = df_clean.dropna(subset=[y_column])
+    
+    if df_clean.empty:
+        # Si no hay datos válidos, crear un gráfico vacío con mensaje
+        fig = go.Figure()
+        fig.add_annotation(
+            x=0.5, y=0.5,
+            text="No hay datos válidos para mostrar",
+            showarrow=False,
+            xref="paper", yref="paper",
+            font=dict(size=16)
+        )
+        fig.update_layout(
+            title=title,
+            height=400,
+            xaxis=dict(showgrid=False, showticklabels=False),
+            yaxis=dict(showgrid=False, showticklabels=False)
+        )
+        return fig
     
     # Determinar el modo (con o sin marcadores)
     mode = 'lines+markers' if show_markers else 'lines'
@@ -436,7 +511,7 @@ def crear_grafico_linea_plotly(df, x_column, y_column, title=None, color=None, s
     
     # Crear el gráfico
     fig = px.line(
-        df,
+        df_clean,
         x=x_column,
         y=y_column,
         markers=show_markers,
@@ -447,12 +522,51 @@ def crear_grafico_linea_plotly(df, x_column, y_column, title=None, color=None, s
     # Configurar línea sin puntos si no hay marcadores
     fig.update_traces(
         mode=mode, 
-        line=dict(width=2.5)
+        line=dict(width=2.5),
+        connectgaps=False  # No conectar líneas a través de gaps
     )
     
     # Mejorar diseño
     fig.update_layout(
-        height=400
+        height=400,
+        showlegend=False,
+        xaxis=dict(title=x_column.replace('_', ' ').title()),
+        yaxis=dict(title=y_column.replace('_', ' ').title())
     )
     
     return fig
+
+def debug_datos(df, nombre_dataset="Dataset"):
+    """Función para debuggear problemas con los datos"""
+    import streamlit as st
+    
+    if df.empty:
+        st.error(f"{nombre_dataset}: DataFrame está vacío")
+        return
+    
+    st.write(f"**{nombre_dataset} - Información de debug:**")
+    st.write(f"- Forma: {df.shape}")
+    st.write(f"- Tipos de datos:")
+    
+    for col in df.columns:
+        dtype = df[col].dtype
+        nulos = df[col].isnull().sum()
+        valores_unicos = df[col].nunique()
+        st.write(f"  - {col}: {dtype}, {nulos} nulos, {valores_unicos} valores únicos")
+        
+        # Mostrar algunos valores de ejemplo
+        valores_ejemplo = df[col].dropna().head(3).tolist()
+        st.write(f"    Ejemplos: {valores_ejemplo}")
+    
+    # Verificar problemas comunes
+    problemas = []
+    for col in df.select_dtypes(include=[object]).columns:
+        if col != 'enlace':  # Excluir columna de enlaces
+            valores_problematicos = df[col].apply(lambda x: isinstance(x, str) and ('nan' in str(x).lower() or 'none' in str(x).lower())).sum()
+            if valores_problematicos > 0:
+                problemas.append(f"{col}: {valores_problematicos} valores con 'nan' o 'none' como string")
+    
+    if problemas:
+        st.warning("**Problemas detectados:**")
+        for problema in problemas:
+            st.write(f"- {problema}")

@@ -17,9 +17,6 @@ port = 8501
 serverAddress = "localhost"
 gatherUsageStats = false
 
-[deprecation]
-showPyplotGlobalUse = false
-
 [logger]
 # Nivel de log para depuración
 level = "INFO"

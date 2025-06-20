@@ -616,9 +616,9 @@ def mostrar_tabla_datos_detallados(df):
     
     # Reemplazar NaN con valores más descriptivos
     for col in df_formato.columns:
-        if col == "enlace":
-            continue
-        if df_formato[col].dtype == float or df_formato[col].dtype == int:
+        if col == "enlace":            continue
+        # Usar pd.api.types.is_numeric_dtype para mejor compatibilidad
+        if pd.api.types.is_numeric_dtype(df_formato[col]):
             df_formato[col] = df_formato[col].fillna("N/D")
     
     # Mostrar DataFrame
