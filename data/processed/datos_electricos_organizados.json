@@ -94255,116 +94255,111 @@
             },
             "tendencia": null
           }
-        }
-      }
-    ],
-    "junio": [
+        }      },
       {
-        "enlace": "http://www.cubadebate.cu/noticias/2025/06/20/union-electrica-estima-deficit-de-generacion-superior-a-1-600-mw-en-horario-pico-de-este-viernes/",
-        "fecha": "2025-06-20",
+        "enlace": "http://www.cubadebate.cu/noticias/2025/05/10/union-electrica-preve-deficit-de-generacion-de-1-400-mw-para-horario-pico-de-este-sabado/",
+        "fecha": "2025-05-10 09:15:00",
         "datos": {
-          "fecha_reporte": "2025-06-20",
+          "zonas_con_problemas": [],
+          "fecha_reporte": "10 mayo 2025",
           "prediccion": {
-            "afectacion": null,
-            "deficit": null
+            "disponibilidad": 1950,
+            "demanda_maxima": 3350,
+            "afectacion": 1400,
+            "deficit": 1400,
+            "respaldo": null,
+            "horario_pico": "horario pico"
+          },
+          "info_matutina": {
+            "hora": "07:00",
+            "disponibilidad": 1800,
+            "demanda": 2750,
+            "deficit": 950,
+            "proyeccion_mediodia": {
+              "afectacion_estimada": 1100,
+              "hora_estimada": "mediodía"
+            }
           },
           "plantas": {
-            "averia": [],
-            "mantenimiento": []
+            "averia": [
+              {
+                "planta": "CTE Santa Cruz",
+                "unidad": 1,
+                "unidades": [1],
+                "tipo": ""
+              },
+              {
+                "planta": "CTE Felton",
+                "unidad": 2,
+                "unidades": [2],
+                "tipo": ""
+              }
+            ],
+            "mantenimiento": [
+              {
+                "planta": "CTE Santa Cruz",
+                "unidad": 2,
+                "unidades": [2],
+                "tipo": ""
+              },
+              {
+                "planta": "CTE Guiteras",
+                "unidad": null,
+                "unidades": [],
+                "tipo": ""
+              },
+              {
+                "planta": "CTE Cienfuegos",
+                "unidad": 4,
+                "unidades": [4],
+                "tipo": ""
+              },
+              {
+                "planta": "CTE Renté",
+                "unidad": 5,
+                "unidades": [5],
+                "tipo": ""
+              }
+            ],
+            "limitacion_termica": {
+              "mw_afectados": 345,
+              "tipo": ""
+            }
           },
           "distribuida": {
-            "motores_con_problemas": {}
+            "motores_con_problemas": {
+              "total": 75,
+              "impacto_mw": 485,
+              "causa": "combustible"
+            },
+            "problemas_lubricantes": {
+              "mw_afectados": null,
+              "unidades_afectadas": ""
+            },
+            "patanas_con_problemas": []
           },
           "paneles_solares": {
-            "produccion_mwh": null
-          }
-        }
-      },
-      {
-        "enlace": "http://www.cubadebate.cu/noticias/2025/06/19/union-electrica-pronostica-afectacion-de-1690-mw-en-horario-pico-de-este-jueves/",
-        "fecha": "2025-06-19",
-        "datos": {
-          "fecha_reporte": "2025-06-19",
-          "prediccion": {
-            "afectacion": null,
-            "deficit": null
+            "cantidad_parques": 11,
+            "produccion_mwh": 1075,
+            "nuevos_parques": null,
+            "capacidad_instalada": null,
+            "periodo_produccion": ""
           },
-          "plantas": {
-            "averia": [],
-            "mantenimiento": []
-          },
-          "distribuida": {
-            "motores_con_problemas": {}
-          },
-          "paneles_solares": {
-            "produccion_mwh": null
-          }
-        }
-      },
-      {
-        "enlace": "http://www.cubadebate.cu/noticias/2025/06/18/union-electrica-pronostica-afectacion-de-1729-mw-en-pico-de-este-miercoles/",
-        "fecha": "2025-06-18",
-        "datos": {
-          "fecha_reporte": "2025-06-18",
-          "prediccion": {
-            "afectacion": null,
-            "deficit": null
-          },
-          "plantas": {
-            "averia": [],
-            "mantenimiento": []
-          },
-          "distribuida": {
-            "motores_con_problemas": {}
-          },
-          "paneles_solares": {
-            "produccion_mwh": null
-          }
-        }
-      },
-      {
-        "enlace": "http://www.cubadebate.cu/noticias/2025/06/17/union-electrica-pronostica-afectacion-de-1600-mw-en-el-horario-pico/",
-        "fecha": "2025-06-17",
-        "datos": {
-          "fecha_reporte": "2025-06-17",
-          "prediccion": {
-            "afectacion": null,
-            "deficit": null
-          },
-          "plantas": {
-            "averia": [],
-            "mantenimiento": []
-          },
-          "distribuida": {
-            "motores_con_problemas": {}
-          },
-          "paneles_solares": {
-            "produccion_mwh": null
-          }
-        }
-      },
-      {
-        "enlace": "http://www.cubadebate.cu/noticias/2025/06/16/union-electrica-pronostica-afectacion-de-1650-en-el-horario-pico-de-hoy/",
-        "fecha": "2025-06-16",
-        "datos": {
-          "fecha_reporte": "2025-06-16",
-          "prediccion": {
-            "afectacion": null,
-            "deficit": null
-          },
-          "plantas": {
-            "averia": [],
-            "mantenimiento": []
-          },
-          "distribuida": {
-            "motores_con_problemas": {}
-          },
-          "paneles_solares": {
-            "produccion_mwh": null
+          "impacto": {
+            "horas_totales": 24,
+            "continuidad_afectacion": "continua",
+            "maximo": {
+              "mw": 1525,
+              "hora": "20:30",
+              "fecha": "día de ayer",
+              "nota": ""
+            },
+            "tendencia": ""
           }
         }
       }
     ],
+    "junio": [],
     "julio": [],
     "agosto": [],
     "septiembre": [],
