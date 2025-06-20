@@ -94258,7 +94258,113 @@
         }
       }
     ],
-    "junio": [],
+    "junio": [
+      {
+        "enlace": "http://www.cubadebate.cu/noticias/2025/06/20/union-electrica-estima-deficit-de-generacion-superior-a-1-600-mw-en-horario-pico-de-este-viernes/",
+        "fecha": "2025-06-20",
+        "datos": {
+          "fecha_reporte": "2025-06-20",
+          "prediccion": {
+            "afectacion": null,
+            "deficit": null
+          },
+          "plantas": {
+            "averia": [],
+            "mantenimiento": []
+          },
+          "distribuida": {
+            "motores_con_problemas": {}
+          },
+          "paneles_solares": {
+            "produccion_mwh": null
+          }
+        }
+      },
+      {
+        "enlace": "http://www.cubadebate.cu/noticias/2025/06/19/union-electrica-pronostica-afectacion-de-1690-mw-en-horario-pico-de-este-jueves/",
+        "fecha": "2025-06-19",
+        "datos": {
+          "fecha_reporte": "2025-06-19",
+          "prediccion": {
+            "afectacion": null,
+            "deficit": null
+          },
+          "plantas": {
+            "averia": [],
+            "mantenimiento": []
+          },
+          "distribuida": {
+            "motores_con_problemas": {}
+          },
+          "paneles_solares": {
+            "produccion_mwh": null
+          }
+        }
+      },
+      {
+        "enlace": "http://www.cubadebate.cu/noticias/2025/06/18/union-electrica-pronostica-afectacion-de-1729-mw-en-pico-de-este-miercoles/",
+        "fecha": "2025-06-18",
+        "datos": {
+          "fecha_reporte": "2025-06-18",
+          "prediccion": {
+            "afectacion": null,
+            "deficit": null
+          },
+          "plantas": {
+            "averia": [],
+            "mantenimiento": []
+          },
+          "distribuida": {
+            "motores_con_problemas": {}
+          },
+          "paneles_solares": {
+            "produccion_mwh": null
+          }
+        }
+      },
+      {
+        "enlace": "http://www.cubadebate.cu/noticias/2025/06/17/union-electrica-pronostica-afectacion-de-1600-mw-en-el-horario-pico/",
+        "fecha": "2025-06-17",
+        "datos": {
+          "fecha_reporte": "2025-06-17",
+          "prediccion": {
+            "afectacion": null,
+            "deficit": null
+          },
+          "plantas": {
+            "averia": [],
+            "mantenimiento": []
+          },
+          "distribuida": {
+            "motores_con_problemas": {}
+          },
+          "paneles_solares": {
+            "produccion_mwh": null
+          }
+        }
+      },
+      {
+        "enlace": "http://www.cubadebate.cu/noticias/2025/06/16/union-electrica-pronostica-afectacion-de-1650-en-el-horario-pico-de-hoy/",
+        "fecha": "2025-06-16",
+        "datos": {
+          "fecha_reporte": "2025-06-16",
+          "prediccion": {
+            "afectacion": null,
+            "deficit": null
+          },
+          "plantas": {
+            "averia": [],
+            "mantenimiento": []
+          },
+          "distribuida": {
+            "motores_con_problemas": {}
+          },
+          "paneles_solares": {
+            "produccion_mwh": null
+          }
+        }
+      }
+    ],
     "julio": [],
     "agosto": [],
     "septiembre": [],

@@ -758,7 +758,7 @@ if __name__ == "__main__":
         api_key=api_key,
         a=args.a,
         b=args.b,
-        model="accounts/fireworks/models/llama-v3p3-70b-instruct",
+        model="accounts/fireworks/models/llama-v3p1-8b-instruct",
         template_path="template.json",
         data_dir="data",
         days_lookback=args.pages_lookback,

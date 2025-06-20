@@ -1,607 +1,651 @@
 import streamlit as st
 import pandas as pd
-import altair as alt
-from datetime import datetime, date
-from .utils import (
-    cargar_datos, 
-    preparar_dataframe_basico, 
-    obtener_plantas,
-    datos_estado_plantas
-)
+import plotly.express as px
+import plotly.graph_objects as go
+import numpy as np
+from datetime import datetime
+from .utils import cargar_datos
 
-def crear_grafico_comparativo(df, col1, col2, titulo1, titulo2):
-    base = alt.Chart(df.reset_index())
+def limpiar_valor_numerico(valor):
+    """Limpiar valores que pueden tener unidades o texto adicional"""
+    if valor is None:
+        return 0
     
-    linea1 = base.mark_line(color='#5276A7').encode(
-        x=alt.X('fecha:T', title='Fecha'),
-        y=alt.Y(f'{col1}:Q', title=titulo1),
-        tooltip=[
-            alt.Tooltip('fecha:T', title='Fecha'),
-            alt.Tooltip(f'{col1}:Q', title=titulo1)
-        ]
-    )
+    # Si ya es numérico, devolverlo
+    if isinstance(valor, (int, float)):
+        return float(valor)
     
-    linea2 = base.mark_line(color='#57A44C').encode(
-        x=alt.X('fecha:T'),
-        y=alt.Y(f'{col2}:Q', title=titulo2),
-        tooltip=[
-            alt.Tooltip('fecha:T', title='Fecha'),
-            alt.Tooltip(f'{col2}:Q', title=titulo2)
-        ]
-    )
+    # Si es string, limpiar
+    if isinstance(valor, str):
+        # Remover unidades comunes y espacios
+        valor_limpio = valor.replace("MW", "").replace("MWh", "").replace("kW", "").replace("kWh", "")
+        valor_limpio = valor_limpio.replace(",", "").strip()
+        
+        # Intentar convertir a float
+        try:
+            return float(valor_limpio)
+        except (ValueError, TypeError):
+            return 0
     
-    return alt.layer(linea1, linea2).resolve_scale(
-        y='independent'
-    ).properties(
-        height=400
-    ).interactive()
+    return 0
 
-def crear_heatmap_anual(df, columna, titulo):
-    # Añadir columnas de mes y día
-    df_heat = df.copy()
-    df_heat['mes'] = df_heat.index.month
-    df_heat['dia'] = df_heat.index.day
-    df_heat['valor'] = df_heat[columna]
-    df_heat = df_heat.reset_index()
+def preparar_datos_multivariados(entradas):
+    """Preparar datos para análisis multivariado con todas las variables disponibles"""
+    filas = []
+    for e in entradas:
+        pred = e["datos"].get("prediccion", {})
+        plantas = e["datos"].get("plantas", {})
+        distribuida = e["datos"].get("distribuida", {})
+        solar = e["datos"].get("paneles_solares", {})
+        impacto = e["datos"].get("impacto", {})
+        
+        # Contar plantas en problemas
+        plantas_averia = len(plantas.get("averia", []))
+        plantas_mantenimiento = len(plantas.get("mantenimiento", []))
+        total_plantas_problemas = plantas_averia + plantas_mantenimiento
+        
+        # Motores distribuidos - limpiar valores
+        motores_impacto = limpiar_valor_numerico(distribuida.get("motores_con_problemas", {}).get("impacto_mw", 0))
+        
+        # Solar - limpiar valores
+        solar_parques = limpiar_valor_numerico(solar.get("cantidad_parques", 0))
+        solar_produccion = limpiar_valor_numerico(solar.get("produccion_mwh", 0))
+        
+        # Impacto máximo - limpiar valores
+        impacto_max = limpiar_valor_numerico(impacto.get("maximo", {}).get("mw", 0))        
+        fila = {
+            "fecha": e["fecha"],
+            "disponibilidad": limpiar_valor_numerico(pred.get("disponibilidad")),
+            "demanda": limpiar_valor_numerico(pred.get("demanda_maxima")),
+            "deficit": limpiar_valor_numerico(pred.get("deficit")),
+            "afectacion": limpiar_valor_numerico(pred.get("afectacion")),
+            "respaldo": limpiar_valor_numerico(pred.get("respaldo")),
+            "plantas_averia": plantas_averia,
+            "plantas_mantenimiento": plantas_mantenimiento,
+            "total_plantas_problemas": total_plantas_problemas,
+            "motores_impacto_mw": motores_impacto,
+            "solar_parques": solar_parques,
+            "solar_produccion_mwh": solar_produccion,
+            "impacto_max_mw": impacto_max,
+            "enlace": e.get("enlace", "")
+        }
+        
+        # Solo incluir filas con datos básicos válidos
+        if fila["disponibilidad"] is not None and fila["demanda"] is not None and fila["disponibilidad"] > 0 and fila["demanda"] > 0:
+            filas.append(fila)    
+    df = pd.DataFrame(filas)
+    if not df.empty:
+        df = df.set_index("fecha").sort_index()
+        
+        # Calcular variables derivadas con protección para división por cero
+        df['cobertura_pct'] = 0
+        df['deficit_pct'] = 0
+        
+        # Calcular cobertura solo donde demanda > 0
+        mask_demanda_valida = df['demanda'] > 0
+        df.loc[mask_demanda_valida, 'cobertura_pct'] = (df.loc[mask_demanda_valida, 'disponibilidad'] / df.loc[mask_demanda_valida, 'demanda'] * 100).round(2)
+        df.loc[mask_demanda_valida, 'deficit_pct'] = (df.loc[mask_demanda_valida, 'deficit'] / df.loc[mask_demanda_valida, 'demanda'] * 100).round(2)
+        
+        df['brecha_disponibilidad_demanda'] = df['disponibilidad'] - df['demanda']
+        
+        # Agregar información temporal
+        df['año'] = df.index.year
+        df['mes'] = df.index.month
+        df['dia_semana'] = df.index.strftime('%A')
     
-    # Crear heatmap
-    heatmap = alt.Chart(df_heat).mark_rect().encode(
-        x=alt.X('mes:O', title='Mes', sort=list(range(1, 13))),
-        y=alt.Y('dia:O', title='Día'),
-        color=alt.Color('valor:Q', title=titulo, scale=alt.Scale(scheme='viridis')),
-        tooltip=[
-            alt.Tooltip('fecha:T', title='Fecha'),
-            alt.Tooltip('valor:Q', title=titulo)
-        ]
-    ).properties(
-        title=f"Heatmap de {titulo} por día",
-        width=800,
+    return df
+
+def crear_grafico_adversarial_principal(df, fecha_inicio, fecha_fin):
+    """Crear el gráfico principal de déficit vs disponibilidad con relleno adversarial"""
+    # Filtrar datos por fecha
+    inicio_dt = datetime.combine(fecha_inicio, datetime.min.time())
+    fin_dt = datetime.combine(fecha_fin, datetime.max.time())
+    
+    df_filtered = df[(df.index >= inicio_dt) & (df.index <= fin_dt)].copy()
+    df_filtered = df_filtered.dropna(subset=['disponibilidad', 'deficit'])
+    
+    if df_filtered.empty:
+        return None    # Crear figura
+    fig = go.Figure()
+    
+    # Línea de disponibilidad (azul) - solo línea
+    fig.add_trace(go.Scatter(
+        x=df_filtered.index,
+        y=df_filtered['disponibilidad'],
+        mode='lines',
+        name='Disponibilidad',
+        line=dict(color='blue', width=2.5),
+        hovertemplate='<b>Disponibilidad</b><br>Fecha: %{x}<br>Valor: %{y:.0f} MW<extra></extra>'
+    ))
+    
+    # Línea de déficit (roja) - solo línea
+    fig.add_trace(go.Scatter(
+        x=df_filtered.index,
+        y=df_filtered['deficit'],
+        mode='lines',
+        name='Déficit',
+        line=dict(color='red', width=2.5),
+        hovertemplate='<b>Déficit</b><br>Fecha: %{x}<br>Valor: %{y:.0f} MW<extra></extra>'
+    ))    
+    # Relleno adversarial simplificado - sin puntos visibles
+    # Crear coordenadas para el relleno completo
+    x_coords = df_filtered.index.tolist()
+    y_disponibilidad = df_filtered['disponibilidad'].tolist()
+    y_deficit = df_filtered['deficit'].tolist()
+    
+    # Determinar el color general del relleno basado en la mayoría de los datos
+    disponibilidad_mayor = (df_filtered['disponibilidad'] >= df_filtered['deficit']).sum()
+    total_puntos = len(df_filtered)
+    
+    if disponibilidad_mayor > total_puntos / 2:
+        fill_color = 'rgba(0, 255, 0, 0.15)'  # Verde translúcido (situación favorable)
+        fill_name = 'Situación Favorable'
+    else:
+        fill_color = 'rgba(255, 0, 0, 0.15)'  # Rojo translúcido (situación crítica)
+        fill_name = 'Situación Crítica'
+    
+    # Crear el relleno como una sola traza
+    x_fill = x_coords + x_coords[::-1]  # x coords + x coords reversed
+    y_fill = y_disponibilidad + y_deficit[::-1]  # y1 + y2 reversed
+    
+    fig.add_trace(go.Scatter(
+        x=x_fill,
+        y=y_fill,
+        fill='toself',
+        fillcolor=fill_color,
+        line=dict(width=0, color='rgba(0,0,0,0)'),  # Línea invisible
+        mode='none',  # Sin puntos ni líneas visibles
+        showlegend=True,
+        name=fill_name,
+        hoverinfo='skip'
+    ))
+    
+    # Configurar diseño
+    y_max = max(df_filtered['disponibilidad'].max(), df_filtered['deficit'].max()) * 1.1
+    
+    fig.update_layout(
+        title=f"Déficit vs Disponibilidad ({fecha_inicio} a {fecha_fin})",
+        xaxis_title="Fecha",
+        yaxis_title="MW",
+        yaxis=dict(range=[0, y_max]),
+        hovermode="x unified",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
         height=500
     )
     
-    return heatmap
+    return fig
+
+def crear_matriz_correlacion(df):
+    """Crear matriz de correlación de variables numéricas"""
+    # Seleccionar variables numéricas principales
+    variables_numericas = [
+        'disponibilidad', 'demanda', 'deficit', 'afectacion', 'respaldo',
+        'total_plantas_problemas', 'motores_impacto_mw', 'solar_parques', 
+        'solar_produccion_mwh', 'cobertura_pct', 'brecha_disponibilidad_demanda'
+    ]
+    
+    # Filtrar variables que existen en el dataframe
+    variables_existentes = [var for var in variables_numericas if var in df.columns]
+    
+    # Calcular matriz de correlación
+    df_corr = df[variables_existentes].corr()
+    
+    # Crear heatmap
+    fig = px.imshow(
+        df_corr.values,
+        x=df_corr.columns,
+        y=df_corr.index,
+        color_continuous_scale='RdBu_r',
+        zmin=-1, zmax=1,
+        title="Matriz de Correlación entre Variables del SEN"
+    )
+    
+    # Añadir valores de correlación como texto
+    for i in range(len(df_corr)):
+        for j in range(len(df_corr.columns)):
+            fig.add_annotation(
+                x=j, y=i,
+                text=f"{df_corr.iloc[i, j]:.2f}",
+                showarrow=False,
+                font=dict(color="white" if abs(df_corr.iloc[i, j]) > 0.5 else "black")
+            )
+    
+    fig.update_layout(height=600)
+    return fig
+
+def crear_grafico_dispersion(df, x_var, y_var):
+    """Crear gráfico de dispersión entre dos variables"""
+    # Filtrar datos válidos
+    df_valid = df.dropna(subset=[x_var, y_var])
+    
+    if df_valid.empty:
+        return None
+    
+    # Crear gráfico de dispersión
+    fig = px.scatter(
+        df_valid.reset_index(),
+        x=x_var,
+        y=y_var,
+        color='año',
+        hover_data=['fecha'],
+        title=f"Relación entre {x_var.title()} y {y_var.title()}",
+        labels={
+            x_var: f"{x_var.replace('_', ' ').title()}",
+            y_var: f"{y_var.replace('_', ' ').title()}"
+        }
+    )
+    
+    # Añadir línea de tendencia
+    if len(df_valid) > 1:
+        # Calcular regresión lineal
+        z = np.polyfit(df_valid[x_var], df_valid[y_var], 1)
+        p = np.poly1d(z)
+        
+        fig.add_trace(go.Scatter(
+            x=df_valid[x_var],
+            y=p(df_valid[x_var]),
+            mode='lines',
+            name='Tendencia',
+            line=dict(color='red', dash='dash')
+        ))
+    
+    fig.update_layout(height=500)
+    return fig
+
+def mostrar_estadisticas_multivariadas(df):
+    """Mostrar estadísticas descriptivas multivariadas"""
+    st.subheader("Estadísticas Descriptivas")
+    
+    # Variables principales para mostrar
+    variables_principales = {
+        'disponibilidad': 'Disponibilidad (MW)',
+        'deficit': 'Déficit (MW)',
+        'demanda': 'Demanda (MW)',
+        'afectacion': 'Afectación (MW)',
+        'cobertura_pct': 'Cobertura (%)',
+        'total_plantas_problemas': 'Plantas con Problemas'
+    }
+    
+    stats_data = []
+    for var, label in variables_principales.items():
+        if var in df.columns:
+            serie = df[var].dropna()
+            if not serie.empty:
+                stats_data.append({
+                    'Variable': label,
+                    'Media': f"{serie.mean():.1f}",
+                    'Mediana': f"{serie.median():.1f}",
+                    'Desv. Estándar': f"{serie.std():.1f}",
+                    'Mínimo': f"{serie.min():.1f}",
+                    'Máximo': f"{serie.max():.1f}",
+                    'Registros': len(serie)
+                })
+    
+    if stats_data:
+        st.dataframe(pd.DataFrame(stats_data), use_container_width=True, hide_index=True)
 
 def app():
-    st.header("Comparativas")
+    """Función principal del módulo de análisis comparativo"""
+    st.header("Análisis Comparativo y Multivariado del SEN")
     st.markdown("---")
     
-    entradas = cargar_datos()
-    df = preparar_dataframe_basico(entradas)
+    # Cargar datos
+    try:
+        entradas = cargar_datos()
+    except Exception as e:
+        st.error(f"Error al cargar datos: {str(e)}")
+        return
     
-    # Tabs para diferentes tipos de comparativas
-    tab1, tab2, tab3, tab4 = st.tabs(["Déficit vs Disponibilidad", "Análisis Temporal", "Correlaciones", "Plantas Termoeléctricas"])
+    # Verificar que se cargaron los datos correctamente
+    if not entradas:
+        st.error("No se pudieron cargar los datos. Verifique la ruta de los archivos.")
+        return
+    
+    # Preparar dataframe multivariado
+    try:
+        df_completo = preparar_datos_multivariados(entradas)
+    except Exception as e:
+        st.error(f"Error al procesar los datos: {str(e)}")
+        return
+    
+    if df_completo.empty:
+        st.error("No hay datos disponibles para analizar.")
+        return
+    
+    # Selector de fechas (igual que en deficit y disponibilidad)
+    st.write("### Selecciona el rango de fechas a analizar")
+    
+    try:
+        fecha_min_datos = df_completo.index.min().date()
+        fecha_max_datos = df_completo.index.max().date()
+    except Exception as e:
+        st.error(f"Error al determinar el rango de fechas: {str(e)}")
+        return
+
+    col1, col2, col3 = st.columns([2, 2, 1])
+    
+    # Inicializar fechas por defecto
+    if 'fecha_inicio_comparativas' not in st.session_state:
+        st.session_state.fecha_inicio_comparativas = fecha_min_datos
+    if 'fecha_fin_comparativas' not in st.session_state:
+        st.session_state.fecha_fin_comparativas = fecha_max_datos
+    
+    with col1:
+        fecha_inicio = st.date_input(
+            "Fecha de inicio",
+            value=st.session_state.fecha_inicio_comparativas,
+            key="fecha_inicio_comparativas_input"
+        )
+    
+    with col2:
+        fecha_fin = st.date_input(
+            "Fecha de fin",
+            value=st.session_state.fecha_fin_comparativas,
+            key="fecha_fin_comparativas_input"
+        )
+    
+    with col3:
+        if st.button("Ver todo", key="ver_todo_comparativas"):
+            st.session_state.fecha_inicio_comparativas = fecha_min_datos
+            st.session_state.fecha_fin_comparativas = fecha_max_datos
+            st.rerun()
+    
+    # Actualizar session state
+    st.session_state.fecha_inicio_comparativas = fecha_inicio
+    st.session_state.fecha_fin_comparativas = fecha_fin
+    
+    # Validaciones
+    if fecha_inicio > fecha_fin:
+        st.error("❌ La fecha de inicio no puede ser posterior a la fecha de fin.")
+        st.stop()
+    
+    # Verificar que las fechas estén dentro del rango de datos disponibles
+    if fecha_inicio < fecha_min_datos or fecha_fin > fecha_max_datos:
+        st.warning(f"⚠️ Las fechas seleccionadas están fuera del rango de datos disponibles ({fecha_min_datos.strftime('%d/%m/%Y')} - {fecha_max_datos.strftime('%d/%m/%Y')})")
+        
+        # Ajustar automáticamente las fechas al rango válido
+        fecha_inicio_ajustada = max(fecha_inicio, fecha_min_datos)
+        fecha_fin_ajustada = min(fecha_fin, fecha_max_datos)
+        
+        st.info(f"📅 Ajustando automáticamente al rango: {fecha_inicio_ajustada.strftime('%d/%m/%Y')} - {fecha_fin_ajustada.strftime('%d/%m/%Y')}")
+        
+        fecha_inicio = fecha_inicio_ajustada
+        fecha_fin = fecha_fin_ajustada
+    
+    # Filtrar dataframe según el rango de fechas seleccionado
+    inicio_dt = datetime.combine(fecha_inicio, datetime.min.time())
+    fin_dt = datetime.combine(fecha_fin, datetime.max.time())
+    
+    df = df_completo[(df_completo.index >= inicio_dt) & (df_completo.index <= fin_dt)].copy()
+    
+    if df.empty:
+        st.warning("No hay datos disponibles para el rango de fechas seleccionado.")
+        return
+    
+    # Gráfico principal adversarial
+    st.write("### Déficit vs Disponibilidad - Análisis Adversarial")
+    st.info("🟢 Verde: Disponibilidad > Déficit (Situación favorable) | 🔴 Rojo: Déficit > Disponibilidad (Situación crítica)")
+    
+    fig_principal = crear_grafico_adversarial_principal(df, fecha_inicio, fecha_fin)
+    if fig_principal:
+        st.plotly_chart(fig_principal, use_container_width=True)
+    else:
+        st.warning("No hay datos suficientes para crear el gráfico principal.")
+    
+    # Pestañas para diferentes análisis
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "Estadísticas Multivariadas",
+        "Correlaciones",
+        "Análisis de Dispersión", 
+        "Factores Externos"
+    ])
     
     with tab1:
-        st.subheader("Déficit vs Disponibilidad por Período")
+        mostrar_estadisticas_multivariadas(df)
         
-        # Selección de rango de tiempo
-        col1, col2 = st.columns([3, 1])
-        with col1:
-            # Selección de años
-            anos = sorted(df.index.year.unique())
-            sel_anos = st.multiselect("Seleccione años", [str(a) for a in anos], default=[str(anos[-1])])
+        # Análisis de cobertura vs déficit
+        st.subheader("Análisis de Cobertura de Demanda")
         
-        with col2:
-            granularidad = st.radio("Granularidad", ["Diaria", "Mensual"])
-        
-        if sel_anos:
-            # Filtrar datos por años seleccionados
-            mask = df.index.year.isin([int(a) for a in sel_anos])
-            df_filtered = df[mask]
+        if 'cobertura_pct' in df.columns:
+            df_cobertura = df.dropna(subset=['cobertura_pct'])
             
-            if not df_filtered.empty:
-                # Resampling según granularidad
-                if granularidad == "Mensual":
-                    df_resampled = df_filtered.resample('M').mean()
-                    fecha_format = '%b %Y'
-                else:
-                    df_resampled = df_filtered
-                    fecha_format = '%d/%m/%Y'
+            if not df_cobertura.empty:
+                # Métricas de cobertura
+                col1, col2, col3, col4 = st.columns(4)
                 
-                # Preparar datos para la visualización
-                df_melted = pd.melt(
-                    df_resampled.reset_index(), 
-                    id_vars='fecha', 
-                    value_vars=['deficit', 'disponibilidad'],
-                    var_name='variable', 
-                    value_name='valor'
+                with col1:
+                    cobertura_promedio = df_cobertura['cobertura_pct'].mean()
+                    st.metric("Cobertura Promedio", f"{cobertura_promedio:.1f}%")
+                
+                with col2:
+                    dias_cobertura_completa = len(df_cobertura[df_cobertura['cobertura_pct'] >= 100])
+                    pct_dias_completa = (dias_cobertura_completa / len(df_cobertura)) * 100
+                    st.metric("Días con Cobertura Completa", f"{dias_cobertura_completa} ({pct_dias_completa:.1f}%)")
+                
+                with col3:
+                    cobertura_min = df_cobertura['cobertura_pct'].min()
+                    st.metric("Cobertura Mínima", f"{cobertura_min:.1f}%")
+                
+                with col4:
+                    cobertura_max = df_cobertura['cobertura_pct'].max()
+                    st.metric("Cobertura Máxima", f"{cobertura_max:.1f}%")
+                
+                # Histograma de cobertura
+                fig_hist = px.histogram(
+                    df_cobertura,
+                    x='cobertura_pct',
+                    nbins=30,
+                    title="Distribución de Cobertura de Demanda (%)",
+                    labels={'cobertura_pct': 'Cobertura (%)', 'count': 'Días'}
                 )
-                
-                # Formatear las fechas
-                df_melted['fecha_str'] = df_melted['fecha'].dt.strftime(fecha_format)
-                
-                # Cambiar nombres para mejor visualización
-                df_melted['variable'] = df_melted['variable'].map({
-                    'deficit': 'Déficit', 
-                    'disponibilidad': 'Disponibilidad'
-                })
-                
-                # Crear gráfico interactivo
-                chart = alt.Chart(df_melted).mark_line(point=True).encode(
-                    x=alt.X('fecha:T', title='Fecha'),
-                    y=alt.Y('valor:Q', title='MW'),
-                    color=alt.Color('variable:N', legend=alt.Legend(title="Indicador")),
-                    tooltip=[
-                        alt.Tooltip('fecha_str:N', title='Fecha'),
-                        alt.Tooltip('variable:N', title='Indicador'),
-                        alt.Tooltip('valor:Q', title='Valor (MW)', format='.2f')
-                    ]
-                ).properties(
-                    height=500
-                ).interactive()
-                
-                st.altair_chart(chart, use_container_width=True)
-                
-                # Estadísticas
-                st.subheader("Estadísticas Comparativas")
-                
-                # Tabla general
-                deficit_mean = df_filtered['deficit'].mean()
-                disp_mean = df_filtered['disponibilidad'].mean()
-                demanda_mean = df_filtered['demanda'].mean()
-                
-                stats_general = {
-                    "Métrica": ["Déficit Promedio (MW)", "Disponibilidad Promedio (MW)", "Demanda Promedio (MW)"],
-                    "Valor": [
-                        f"{deficit_mean:.2f}" if not pd.isna(deficit_mean) else "N/D",
-                        f"{disp_mean:.2f}" if not pd.isna(disp_mean) else "N/D",
-                        f"{demanda_mean:.2f}" if not pd.isna(demanda_mean) else "N/D"
-                    ]
-                }
-                
-                st.table(pd.DataFrame(stats_general))
-                
-                # Estadísticas por año
-                stats_by_year = []
-                for a in sel_anos:
-                    year_data = df_filtered[df_filtered.index.year == int(a)]
-                    stats_by_year.append({
-                        "Año": a,
-                        "Déficit Promedio (MW)": f"{year_data['deficit'].mean():.2f}" if not year_data['deficit'].isna().all() else "N/D",
-                        "Disponibilidad Promedio (MW)": f"{year_data['disponibilidad'].mean():.2f}" if not year_data['disponibilidad'].isna().all() else "N/D",
-                        "Días con Déficit": f"{(year_data['deficit'] > 0).sum()}" if not year_data['deficit'].isna().all() else "N/D",
-                        "Máximo Déficit (MW)": f"{year_data['deficit'].max():.2f}" if not year_data['deficit'].isna().all() else "N/D"
-                    })
-                
-                st.write("#### Estadísticas por Año")
-                st.table(pd.DataFrame(stats_by_year))
-            else:
-                st.warning("No hay datos disponibles para los años seleccionados.")
-        else:
-            st.warning("Por favor, seleccione al menos un año para visualizar la comparativa.")
+                fig_hist.add_vline(x=100, line_dash="dash", line_color="red", 
+                                  annotation_text="Cobertura Completa (100%)")
+                fig_hist.update_layout(height=400)
+                st.plotly_chart(fig_hist, use_container_width=True)
     
     with tab2:
-        st.subheader("Análisis Temporal")
-        
-        # Selección del tipo de visualización
-        tipo_vis = st.selectbox(
-            "Tipo de Visualización", 
-            ["Heatmap Anual", "Evolución Mensual", "Comparativa Interanual"]
-        )
-        
-        # Selección de la métrica a visualizar
-        metrica = st.selectbox(
-            "Métrica a Visualizar", 
-            ["deficit", "disponibilidad", "afectacion", "demanda"],
-            format_func=lambda x: {
-                "deficit": "Déficit",
-                "disponibilidad": "Disponibilidad",
-                "afectacion": "Afectación",
-                "demanda": "Demanda"
-            }[x]
-        )
-        
-        # Título para los gráficos
-        titulo_metrica = {
-            "deficit": "Déficit (MW)",
-            "disponibilidad": "Disponibilidad (MW)",
-            "afectacion": "Afectación (MW)",
-            "demanda": "Demanda (MW)"
-        }[metrica]
-        
-        if tipo_vis == "Heatmap Anual":
-            # Seleccionar año
-            ano = st.selectbox("Seleccione Año", sorted(df.index.year.unique(), reverse=True))
-            
-            # Filtrar datos del año seleccionado
-            df_year = df[df.index.year == ano]
-            
-            if not df_year.empty and not df_year[metrica].isna().all():
-                # Crear heatmap usando la función auxiliar
-                heatmap = crear_heatmap_anual(df_year, metrica, titulo_metrica)
-                st.altair_chart(heatmap, use_container_width=True)
-            else:
-                st.info(f"No hay datos suficientes para el año {ano}")
-        
-        elif tipo_vis == "Evolución Mensual":
-            # Agrupar datos por mes
-            df_monthly = df.resample('M').mean()
-            
-            if not df_monthly.empty and not df_monthly[metrica].isna().all():
-                # Crear dataframe para la visualización
-                df_vis = df_monthly[[metrica]].copy().reset_index()
-                df_vis['año'] = df_vis['fecha'].dt.year
-                df_vis['mes'] = df_vis['fecha'].dt.month
-                
-                # Crear gráfico de líneas por año
-                chart = alt.Chart(df_vis).mark_line(point=True).encode(
-                    x=alt.X('mes:O', title='Mes', sort=list(range(1, 13))),
-                    y=alt.Y(f'{metrica}:Q', title=titulo_metrica),
-                    color=alt.Color('año:N', title='Año'),
-                    tooltip=[
-                        alt.Tooltip('año:N', title='Año'),
-                        alt.Tooltip('mes:O', title='Mes'),
-                        alt.Tooltip(f'{metrica}:Q', title=titulo_metrica)
-                    ]
-                ).properties(
-                    title=f"Evolución mensual de {titulo_metrica}",
-                    height=500
-                ).interactive()
-                
-                st.altair_chart(chart, use_container_width=True)
-            else:
-                st.info("No hay datos suficientes para mostrar la evolución mensual")
-        
-        elif tipo_vis == "Comparativa Interanual":
-            # Seleccionar años para comparar
-            anos = sorted(df.index.year.unique())
-            sel_anos = st.multiselect(
-                "Seleccione años para comparar", 
-                [str(a) for a in anos], 
-                default=[str(anos[-1])] if anos else []
-            )
-            
-            if sel_anos:
-                # Crear dataframe para comparativa
-                df_comp = pd.DataFrame()
-                
-                for a in sel_anos:
-                    y = int(a)
-                    year_data = df[df.index.year == y].copy()
-                    year_data['dia_año'] = year_data.index.dayofyear
-                    year_data['año'] = y
-                    df_comp = pd.concat([df_comp, year_data])
-                
-                if not df_comp.empty and not df_comp[metrica].isna().all():
-                    # Crear gráfico de líneas por día del año
-                    chart = alt.Chart(df_comp.reset_index()).mark_line().encode(
-                        x=alt.X('dia_año:Q', title='Día del año'),
-                        y=alt.Y(f'{metrica}:Q', title=titulo_metrica),
-                        color=alt.Color('año:N', title='Año'),
-                        tooltip=[
-                            alt.Tooltip('fecha:T', title='Fecha'),
-                            alt.Tooltip(f'{metrica}:Q', title=titulo_metrica)
-                        ]
-                    ).properties(
-                        title=f"Comparativa interanual de {titulo_metrica}",
-                        height=500
-                    ).interactive()
-                    
-                    st.altair_chart(chart, use_container_width=True)
-                else:
-                    st.info("No hay datos suficientes para los años seleccionados")
-            else:
-                st.warning("Por favor, seleccione al menos un año para la comparativa")
-    
-    with tab3:
         st.subheader("Análisis de Correlaciones")
         
-        # Filtrar datos con suficientes columnas para análisis
-        df_corr = df[['deficit', 'disponibilidad', 'demanda', 'afectacion']].copy()
-        df_corr = df_corr.dropna()
+        # Matriz de correlación
+        fig_corr = crear_matriz_correlacion(df)
+        st.plotly_chart(fig_corr, use_container_width=True)
         
-        if not df_corr.empty:
-            # Calcular matriz de correlación
-            corr_matrix = df_corr.corr()
+        # Correlaciones más fuertes
+        variables_numericas = df.select_dtypes(include=[np.number]).columns.tolist()
+        if len(variables_numericas) > 1:
+            corr_matrix = df[variables_numericas].corr()
             
-            # Mostrar matriz de correlación como tabla
-            st.write("#### Matriz de Correlación")
-            st.table(corr_matrix.style.format("{:.2f}"))
+            # Encontrar correlaciones más fuertes (excluyendo diagonal)
+            correlaciones_fuertes = []
+            for i in range(len(corr_matrix.columns)):
+                for j in range(i+1, len(corr_matrix.columns)):
+                    var1 = corr_matrix.columns[i]
+                    var2 = corr_matrix.columns[j]
+                    corr_val = corr_matrix.iloc[i, j]
+                    
+                    if not pd.isna(corr_val) and abs(corr_val) > 0.5:
+                        correlaciones_fuertes.append({
+                            'Variable 1': var1,
+                            'Variable 2': var2,
+                            'Correlación': f"{corr_val:.3f}",
+                            'Fuerza': 'Muy Alta' if abs(corr_val) > 0.8 else 'Alta'
+                        })
             
-            # Selección de variables para diagrama de dispersión
+            if correlaciones_fuertes:
+                st.write("#### Correlaciones más significativas (|r| > 0.5)")
+                st.dataframe(
+                    pd.DataFrame(correlaciones_fuertes).sort_values('Correlación', key=lambda x: abs(x.astype(float)), ascending=False),
+                    use_container_width=True,
+                    hide_index=True
+                )
+            else:
+                st.info("No se encontraron correlaciones significativas entre las variables.")
+    
+    with tab3:
+        st.subheader("Análisis de Dispersión")
+        
+        # Selectores para variables
+        variables_disponibles = {
+            'disponibilidad': 'Disponibilidad (MW)',
+            'deficit': 'Déficit (MW)',
+            'demanda': 'Demanda (MW)',
+            'afectacion': 'Afectación (MW)',
+            'total_plantas_problemas': 'Plantas con Problemas',
+            'motores_impacto_mw': 'Impacto Motores (MW)',
+            'solar_parques': 'Parques Solares',
+            'cobertura_pct': 'Cobertura (%)'
+        }
+        
+        # Filtrar variables que existen en los datos
+        variables_existentes = {k: v for k, v in variables_disponibles.items() if k in df.columns}
+        
+        if len(variables_existentes) >= 2:
             col1, col2 = st.columns(2)
             
             with col1:
                 x_var = st.selectbox(
-                    "Variable X", 
-                    ["disponibilidad", "deficit", "demanda", "afectacion"],
-                    format_func=lambda x: {
-                        "deficit": "Déficit",
-                        "disponibilidad": "Disponibilidad",
-                        "afectacion": "Afectación",
-                        "demanda": "Demanda"
-                    }[x]
+                    "Variable X",
+                    list(variables_existentes.keys()),
+                    format_func=lambda x: variables_existentes[x],
+                    key="scatter_x"
                 )
             
             with col2:
                 y_var = st.selectbox(
-                    "Variable Y", 
-                    ["deficit", "disponibilidad", "demanda", "afectacion"],
-                    format_func=lambda x: {
-                        "deficit": "Déficit",
-                        "disponibilidad": "Disponibilidad",
-                        "afectacion": "Afectación",
-                        "demanda": "Demanda"
-                    }[x],
-                    index=1
+                    "Variable Y",
+                    list(variables_existentes.keys()),
+                    format_func=lambda x: variables_existentes[x],
+                    index=1 if len(variables_existentes) > 1 else 0,
+                    key="scatter_y"
                 )
             
-            # Crear diagrama de dispersión
-            scatter = alt.Chart(df_corr.reset_index()).mark_circle(size=60).encode(
-                x=alt.X(f'{x_var}:Q', title=f"{x_var.capitalize()} (MW)"),
-                y=alt.Y(f'{y_var}:Q', title=f"{y_var.capitalize()} (MW)"),
-                tooltip=[
-                    alt.Tooltip('fecha:T', title='Fecha'),
-                    alt.Tooltip(f'{x_var}:Q', title=f"{x_var.capitalize()} (MW)"),
-                    alt.Tooltip(f'{y_var}:Q', title=f"{y_var.capitalize()} (MW)")
-                ],
-                color=alt.Color('fecha:T', legend=None)
-            ).properties(
-                height=500,
-                title=f"Correlación entre {x_var.capitalize()} y {y_var.capitalize()}"
-            ).interactive()
-            
-            # Añadir línea de regresión
-            regression = scatter.transform_regression(x_var, y_var).mark_line(color='red')
-            
-            # Mostrar gráfico
-            st.altair_chart(scatter + regression, use_container_width=True)
-            
-            # Calcular coeficiente de correlación
-            corr_value = df_corr[x_var].corr(df_corr[y_var])
-            st.write(f"**Coeficiente de correlación:** {corr_value:.4f}")
-            
-            # Interpretación del coeficiente
-            if abs(corr_value) < 0.2:
-                st.write("Interpretación: **Correlación muy baja o nula**")
-            elif abs(corr_value) < 0.4:
-                st.write("Interpretación: **Correlación baja**")
-            elif abs(corr_value) < 0.6:
-                st.write("Interpretación: **Correlación moderada**")
-            elif abs(corr_value) < 0.8:
-                st.write("Interpretación: **Correlación alta**")
-            else:
-                st.write("Interpretación: **Correlación muy alta**")
-        else:
-            st.warning("No hay suficientes datos para realizar análisis de correlaciones")
-
-    with tab4:
-        st.subheader("Análisis de Plantas Termoeléctricas")
-        st.markdown("""
-        Esta sección muestra el análisis de las centrales termoeléctricas del Sistema Eléctrico Nacional.
-        Los nombres de las plantas han sido estandarizados para evitar duplicidades por variaciones en la nomenclatura.
-        """)
-        
-        # Obtener plantas estandarizadas
-        plantas = obtener_plantas(entradas)
-        df_plantas = datos_estado_plantas(entradas)
-        
-        # No mostrar si no hay datos
-        if df_plantas.empty:
-            st.warning("No hay datos disponibles de plantas termoeléctricas")
-            return
-            
-        # Selección de visualización
-        visualizacion = st.radio(
-            "Tipo de visualización",
-            ["Frecuencia de estados", "Línea de tiempo", "Estadísticas por planta"]
-        )
-        
-        if visualizacion == "Frecuencia de estados":
-            # Selección de plantas
-            plantas_seleccionadas = st.multiselect(
-                "Seleccionar plantas para análisis",
-                plantas,
-                default=plantas[:5] if len(plantas) > 0 else []
-            )
-            
-            if not plantas_seleccionadas:
-                st.info("Seleccione al menos una planta para visualizar datos")
-                return
-                
-            # Filtrar datos por plantas seleccionadas
-            df_filtered = df_plantas[df_plantas['planta'].isin(plantas_seleccionadas)]
-            
-            # Contar frecuencia de estados por planta
-            conteo = df_filtered.groupby(['planta', 'estado']).size().reset_index(name='frecuencia')
-            
-            # Crear gráfico de barras agrupadas
-            chart = alt.Chart(conteo).mark_bar().encode(
-                x=alt.X('planta:N', title='Planta', sort='-y'),
-                y=alt.Y('frecuencia:Q', title='Días en este estado'),
-                color=alt.Color('estado:N', title='Estado',
-                               scale=alt.Scale(domain=['Avería', 'Mantenimiento'],
-                                               range=['#e15759', '#4e79a7'])),
-                tooltip=['planta:N', 'estado:N', 'frecuencia:Q']
-            ).properties(
-                title='Frecuencia de estados por planta',
-                height=500
-            ).interactive()
-            
-            st.altair_chart(chart, use_container_width=True)
-            
-            # Análisis adicional
-            total_dias = len(df_filtered['fecha'].unique())
-            st.write(f"**Período de análisis:** {total_dias} días")
-            
-            # Tabla de estadísticas
-            stats = []
-            for planta in plantas_seleccionadas:
-                planta_df = df_filtered[df_filtered['planta'] == planta]
-                dias_averia = len(planta_df[planta_df['estado'] == 'Avería'])
-                dias_mant = len(planta_df[planta_df['estado'] == 'Mantenimiento'])
-                total = dias_averia + dias_mant
-                
-                stats.append({
-                    "Planta": planta,
-                    "Días en avería": dias_averia,
-                    "Días en mantenimiento": dias_mant,
-                    "Total días con problemas": total,
-                    "% del período analizado": f"{(total / total_dias * 100):.1f}%" if total_dias > 0 else "N/A"
-                })
-            
-            st.write("#### Estadísticas por planta")
-            st.table(pd.DataFrame(stats))
-            
-        elif visualizacion == "Línea de tiempo":
-            # Selección de planta
-            planta = st.selectbox("Seleccione una planta", plantas)
-            
-            if not planta:
-                st.info("No hay plantas disponibles para análisis")
-                return
-                
-            # Filtrar datos para la planta seleccionada
-            df_planta = df_plantas[df_plantas['planta'] == planta]
-            
-            if df_planta.empty:
-                st.info(f"No hay datos disponibles para la planta {planta}")
-                return
-                
-            # Crear dataframe para visualización
-            df_timeline = df_planta.copy()
-            
-            # Convertir a formato de línea de tiempo
-            chart = alt.Chart(df_timeline).mark_point(size=100, filled=True).encode(
-                x=alt.X('fecha:T', title='Fecha'),
-                y=alt.Y('estado:N', title='Estado'),
-                color=alt.Color('estado:N', 
-                                scale=alt.Scale(domain=['Avería', 'Mantenimiento'],
-                                               range=['#e15759', '#4e79a7'])),
-                tooltip=['fecha:T', 'estado:N']
-            ).properties(
-                title=f'Línea de tiempo para {planta}',
-                height=300
-            ).interactive()
-            
-            st.altair_chart(chart, use_container_width=True)
-            
-            # Estadísticas adicionales
-            fechas_unicas = df_timeline['fecha'].unique()
-            primer_registro = min(fechas_unicas) if len(fechas_unicas) > 0 else None
-            ultimo_registro = max(fechas_unicas) if len(fechas_unicas) > 0 else None
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("Primer registro", primer_registro.strftime('%Y-%m-%d') if primer_registro else "N/A")
-            with col2:
-                st.metric("Último registro", ultimo_registro.strftime('%Y-%m-%d') if ultimo_registro else "N/A")
-            
-            # Calcular porcentajes de tiempo en cada estado
-            total_registros = len(df_timeline)
-            averia_count = len(df_timeline[df_timeline['estado'] == 'Avería'])
-            mant_count = len(df_timeline[df_timeline['estado'] == 'Mantenimiento'])
-            
-            col1, col2 = st.columns(2)
-            with col1:
-                st.metric("% tiempo en avería", f"{averia_count/total_registros*100:.1f}%" if total_registros > 0 else "N/A")
-            with col2:
-                st.metric("% tiempo en mantenimiento", f"{mant_count/total_registros*100:.1f}%" if total_registros > 0 else "N/A")
-            
-        elif visualizacion == "Estadísticas por planta":
-            # Calcular estadísticas para todas las plantas
-            stats_all = []
-            
-            # Fechas únicas en todo el conjunto de datos
-            all_dates = df_plantas['fecha'].unique()
-            total_days = len(all_dates)
-            
-            for planta in plantas:
-                df_planta = df_plantas[df_plantas['planta'] == planta]
-                
-                if df_planta.empty:
-                    continue
+            if x_var != y_var:
+                fig_scatter = crear_grafico_dispersion(df, x_var, y_var)
+                if fig_scatter:
+                    st.plotly_chart(fig_scatter, use_container_width=True)
                     
-                dias_averia = len(df_planta[df_planta['estado'] == 'Avería'])
-                dias_mant = len(df_planta[df_planta['estado'] == 'Mantenimiento'])
-                total_problemas = dias_averia + dias_mant
-                
-                # Calcular el período más largo en cada estado
-                periodos = []
-                current_state = None
-                current_start = None
-                
-                for date in sorted(all_dates):
-                    # Buscar si hay registro para esta fecha
-                    registros = df_planta[df_planta['fecha'] == date]
-                    
-                    if len(registros) > 0:
-                        estado = registros.iloc[0]['estado']
+                    # Calcular y mostrar correlación
+                    df_valid = df.dropna(subset=[x_var, y_var])
+                    if len(df_valid) > 1:
+                        correlacion = df_valid[x_var].corr(df_valid[y_var])
                         
-                        if current_state is None:
-                            # Inicio de un nuevo período
-                            current_state = estado
-                            current_start = date
-                        elif estado != current_state:
-                            # Cambio de estado
-                            periodos.append({
-                                'estado': current_state,
-                                'inicio': current_start,
-                                'fin': date,
-                                'duracion': (date - current_start).days
-                            })
-                            current_state = estado
-                            current_start = date
-                    else:
-                        # No hay registro para esta fecha, terminar período actual si existe
-                        if current_state is not None:
-                            periodos.append({
-                                'estado': current_state,
-                                'inicio': current_start,
-                                'fin': date,
-                                'duracion': (date - current_start).days
-                            })
-                            current_state = None
-                            current_start = None
-                
-                # Calcular períodos más largos
-                if periodos:
-                    periodo_averia = max([p['duracion'] for p in periodos if p['estado'] == 'Avería'], default=0)
-                    periodo_mant = max([p['duracion'] for p in periodos if p['estado'] == 'Mantenimiento'], default=0)
+                        col1, col2 = st.columns(2)
+                        with col1:
+                            st.metric("Coeficiente de Correlación", f"{correlacion:.4f}")
+                        with col2:
+                            if abs(correlacion) < 0.2:
+                                interpretacion = "Muy baja"
+                            elif abs(correlacion) < 0.4:
+                                interpretacion = "Baja"
+                            elif abs(correlacion) < 0.6:
+                                interpretacion = "Moderada"
+                            elif abs(correlacion) < 0.8:
+                                interpretacion = "Alta"
+                            else:
+                                interpretacion = "Muy alta"
+                            
+                            st.metric("Interpretación", interpretacion)
                 else:
-                    periodo_averia = 0
-                    periodo_mant = 0
+                    st.warning("No hay datos suficientes para crear el gráfico de dispersión.")
+            else:
+                st.warning("Por favor seleccione dos variables diferentes.")
+        else:
+            st.warning("No hay suficientes variables numéricas para crear gráficos de dispersión.")
+    
+    with tab4:
+        st.subheader("Factores Externos y Energía Renovable")
+        
+        # Análisis de energía solar
+        if 'solar_parques' in df.columns and 'solar_produccion_mwh' in df.columns:
+            df_solar = df.dropna(subset=['solar_parques', 'solar_produccion_mwh'])
+            
+            if not df_solar.empty and df_solar['solar_parques'].sum() > 0:
+                st.write("#### Impacto de la Energía Solar")
                 
-                stats_all.append({
-                    "Planta": planta,
-                    "Días en avería": dias_averia,
-                    "Días en mantenimiento": dias_mant,
-                    "Total días con problemas": total_problemas,
-                    "% del período analizado": f"{(total_problemas / total_days * 100):.1f}%" if total_days > 0 else "N/A",
-                    "Período más largo en avería (días)": periodo_averia,
-                    "Período más largo en mantenimiento (días)": periodo_mant
-                })
+                # Métricas solares
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    promedio_parques = df_solar['solar_parques'].mean()
+                    st.metric("Parques Promedio", f"{promedio_parques:.1f}")
+                
+                with col2:
+                    produccion_total = df_solar['solar_produccion_mwh'].sum()
+                    st.metric("Producción Total", f"{produccion_total:.1f} MWh")
+                
+                with col3:
+                    produccion_promedio = df_solar['solar_produccion_mwh'].mean()
+                    st.metric("Producción Promedio", f"{produccion_promedio:.1f} MWh/día")
+                
+                # Gráfico de evolución solar
+                fig_solar = go.Figure()
+                
+                fig_solar.add_trace(go.Scatter(
+                    x=df_solar.index,
+                    y=df_solar['solar_parques'],
+                    mode='lines+markers',
+                    name='Parques Solares',
+                    yaxis='y',
+                    line=dict(color='orange')
+                ))
+                
+                fig_solar.add_trace(go.Scatter(
+                    x=df_solar.index,
+                    y=df_solar['solar_produccion_mwh'],
+                    mode='lines+markers',
+                    name='Producción (MWh)',
+                    yaxis='y2',
+                    line=dict(color='gold')
+                ))
+                
+                fig_solar.update_layout(
+                    title="Evolución de la Energía Solar",
+                    xaxis_title="Fecha",
+                    yaxis=dict(title="Número de Parques", side="left"),
+                    yaxis2=dict(title="Producción (MWh)", side="right", overlaying="y"),
+                    legend=dict(x=0.01, y=0.99),
+                    height=400
+                )
+                
+                st.plotly_chart(fig_solar, use_container_width=True)
+            else:
+                st.info("No hay datos de energía solar disponibles para el período seleccionado.")
+        
+        # Análisis de motores distribuidos
+        if 'motores_impacto_mw' in df.columns:
+            df_motores = df.dropna(subset=['motores_impacto_mw'])
             
-            # Ordenar por total de días con problemas (descendente)
-            stats_df = pd.DataFrame(stats_all).sort_values("Total días con problemas", ascending=False)
-            
-            # Mostrar tabla general
-            st.write("#### Estadísticas generales por planta")
-            st.write(f"Período de análisis: {total_days} días")
-            st.dataframe(stats_df)
-            
-            # Visualización gráfica de las plantas con más problemas
-            top_n = min(10, len(stats_df))
-            top_plantas = stats_df.head(top_n)
-            
-            chart_data = pd.melt(
-                top_plantas,
-                id_vars=['Planta'],
-                value_vars=['Días en avería', 'Días en mantenimiento'],
-                var_name='Categoría',
-                value_name='Días'
-            )
-            
-            chart = alt.Chart(chart_data).mark_bar().encode(
-                x=alt.X('Planta:N', sort='-y', title='Planta'),
-                y=alt.Y('Días:Q', title='Días'),
-                color=alt.Color('Categoría:N', 
-                               scale=alt.Scale(domain=['Días en avería', 'Días en mantenimiento'],
-                                              range=['#e15759', '#4e79a7'])),
-                tooltip=['Planta:N', 'Categoría:N', 'Días:Q']
-            ).properties(
-                title=f'Top {top_n} plantas con más días de afectación',
-                height=400
-            ).interactive()
-            
-            st.altair_chart(chart, use_container_width=True)
+            if not df_motores.empty and df_motores['motores_impacto_mw'].sum() > 0:
+                st.write("#### Impacto de Motores Distribuidos")
+                
+                # Métricas de motores
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    impacto_promedio = df_motores['motores_impacto_mw'].mean()
+                    st.metric("Impacto Promedio", f"{impacto_promedio:.1f} MW")
+                
+                with col2:
+                    impacto_maximo = df_motores['motores_impacto_mw'].max()
+                    st.metric("Impacto Máximo", f"{impacto_maximo:.1f} MW")
+                
+                with col3:
+                    dias_con_problemas = len(df_motores[df_motores['motores_impacto_mw'] > 0])
+                    pct_dias_problemas = (dias_con_problemas / len(df_motores)) * 100
+                    st.metric("Días con Problemas", f"{dias_con_problemas} ({pct_dias_problemas:.1f}%)")
+                
+                # Gráfico de impacto de motores vs déficit
+                if 'deficit' in df.columns:
+                    fig_motores = px.scatter(
+                        df_motores.reset_index(),
+                        x='motores_impacto_mw',
+                        y='deficit',
+                        hover_data=['fecha'],
+                        title="Relación entre Impacto de Motores y Déficit",
+                        labels={
+                            'motores_impacto_mw': 'Impacto Motores (MW)',
+                            'deficit': 'Déficit (MW)'
+                        }
+                    )
+                    fig_motores.update_layout(height=400)
+                    st.plotly_chart(fig_motores, use_container_width=True)
+            else:
+                st.info("No hay datos de motores distribuidos disponibles para el período seleccionado.")

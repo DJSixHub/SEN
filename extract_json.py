@@ -310,7 +310,7 @@ Para campos desconocidos usa null, no inventes datos. No añadas campos adiciona
         path_template='template.json',
         url_llm="https://api.fireworks.ai/inference/v1/chat/completions",
         apikey=os.getenv('FIREWORKS_API_KEY'),
-        model='accounts/fireworks/models/llama-v3p3-70b-instruct',
+        model='accounts/fireworks/models/llama-v3p1-8b-instruct',
         a=2022,
         b=2025
     )

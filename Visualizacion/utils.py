@@ -331,6 +331,31 @@ def preparar_datos_plantas_deficit(df):
     df_plantas = pd.DataFrame(filas_plantas)
     return df_plantas
 
+# Función para preparar datos para análisis de plantas en relación a la disponibilidad
+def preparar_datos_plantas_disponibilidad(df):
+    """
+    Prepara datos de plantas específicamente para análisis de disponibilidad.
+    En lugar de plantas en avería, analiza plantas operativas (disponibles).
+    """
+    if df.empty:
+        return None
+    
+    # Para disponibilidad, necesitamos una lógica diferente
+    # Por ahora, creamos un DataFrame básico que permita el análisis
+    # En el futuro se puede expandir para incluir específicamente plantas operativas
+    
+    # Crear DataFrame con fechas y disponibilidad para análisis básico
+    df_disponibilidad = df[['disponibilidad']].copy()
+    df_disponibilidad = df_disponibilidad.dropna()
+    
+    # Agregar información contextual
+    df_disponibilidad['fecha'] = df_disponibilidad.index
+    df_disponibilidad['mes'] = df_disponibilidad.index.month
+    df_disponibilidad['año'] = df_disponibilidad.index.year
+    df_disponibilidad['dia_semana'] = df_disponibilidad.index.strftime('%A')
+    
+    return df_disponibilidad
+
 # Función para analizar distribución temporal de cualquier métrica
 def analizar_distribucion_temporal(df, metrica):
     if metrica not in df.columns or df.empty:

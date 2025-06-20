@@ -69,99 +69,108 @@ def app():
     
     # Crear métricas destacadas en una fila
     col1, col2, col3, col4 = st.columns(4)
-    
-    # Función para calcular delta con indicador de dirección y con color personalizado
-    def calcular_delta_personalizado(actual, anterior, es_bueno_si_aumenta=True):
-        if actual is None or anterior is None or actual == "N/D" or anterior == "N/D":
-            return None
+      # Función para calcular delta con colores apropiados
+    def calcular_delta_y_color(actual, anterior, es_bueno_si_aumenta=True):
+        """
+        Calcula el delta y determina el color apropiado.
+        
+        Args:
+            actual: valor actual
+            anterior: valor anterior
+            es_bueno_si_aumenta: True si aumentar es bueno, False si disminuir es bueno
             
-        valor_actual = float(actual)
-        valor_anterior = float(anterior)
+        Returns:
+            tuple: (delta_value, delta_color)
+        """
+        if actual is None or anterior is None or actual == "N/D" or anterior == "N/D":
+            return None, "normal"
+            
+        try:
+            valor_actual = float(actual)
+            valor_anterior = float(anterior)
+        except (ValueError, TypeError):
+            return None, "normal"
+            
         diferencia = valor_actual - valor_anterior
         
         # Si no hay cambio, retornar 0
         if diferencia == 0:
-            return 0
+            return 0, "normal"
+          # Determinar si el cambio es bueno o malo
+        cambio_es_bueno = (diferencia > 0 and es_bueno_si_aumenta) or (diferencia < 0 and not es_bueno_si_aumenta)
         
-        # La dirección de la flecha siempre muestra la dirección real del cambio
-        # El color indica si el cambio es bueno (verde) o malo (rojo)
-        # Si es bueno si aumenta y aumentó, o es bueno si disminuye y disminuyó -> verde
-        # En caso contrario -> rojo
-        if (diferencia > 0 and es_bueno_si_aumenta) or (diferencia < 0 and not es_bueno_si_aumenta):
-            # Mantenemos diferencia positiva para verde y negativa para rojo
-            return diferencia
+        # Streamlit: delta positivo = flecha arriba, delta negativo = flecha abajo
+        # delta_color "normal": positivo=verde, negativo=rojo
+        # delta_color "inverse": positivo=rojo, negativo=verde
+        
+        if cambio_es_bueno:
+            # Cambio bueno -> queremos color verde
+            # Si diferencia es positiva, usamos "normal" para que positivo sea verde
+            # Si diferencia es negativa, usamos "inverse" para que negativo sea verde
+            if diferencia > 0:
+                return diferencia, "normal"   # Positivo verde
+            else:
+                return diferencia, "inverse"  # Negativo verde
         else:
-            # Streamlit usa color verde para valores positivos y rojo para negativos
-            # Usamos delta_color="inverse" para invertir esta lógica
-            # La flecha seguirá la dirección real pero el color será invertido
-            return diferencia
+            # Cambio malo -> queremos color rojo
+            # Si diferencia es positiva, usamos "inverse" para que positivo sea rojo
+            # Si diferencia es negativa, usamos "normal" para que negativo sea rojo
+            if diferencia > 0:
+                return diferencia, "inverse"  # Positivo rojo
+            else:
+                return diferencia, "normal"   # Negativo rojo
     
     with col1:
         # Para Déficit: si aumenta -> flecha arriba roja, si disminuye -> flecha abajo verde
         deficit_actual = pred.get("deficit", "N/D")
         deficit_anterior = datos_anteriores.get("deficit", "N/D")
         
-        delta_deficit = None
-        if deficit_actual != "N/D" and deficit_anterior != "N/D":
-            # Para déficit, un aumento es malo (rojo)
-            delta_deficit = calcular_delta_personalizado(deficit_actual, deficit_anterior, es_bueno_si_aumenta=False)
+        delta_deficit, color_deficit = calcular_delta_y_color(deficit_actual, deficit_anterior, es_bueno_si_aumenta=False)
         
-        # El parámetro delta_color="inverse" invierte los colores: valor positivo->rojo, valor negativo->verde
         st.metric(
             label="Déficit (MW)",
             value=deficit_actual,
             delta=delta_deficit,
-            delta_color="inverse" if delta_deficit and delta_deficit > 0 else "normal"
-        )
+            delta_color=color_deficit        )
     
     with col2:
         # Para Disponibilidad: si aumenta -> flecha arriba verde, si disminuye -> flecha abajo roja
         disp_actual = pred.get("disponibilidad", "N/D")
         disp_anterior = datos_anteriores.get("disponibilidad", "N/D")
         
-        delta_disp = None
-        if disp_actual != "N/D" and disp_anterior != "N/D":
-            # Para disponibilidad, un aumento es positivo (verde)
-            delta_disp = calcular_delta_personalizado(disp_actual, disp_anterior, es_bueno_si_aumenta=True)
+        delta_disp, color_disp = calcular_delta_y_color(disp_actual, disp_anterior, es_bueno_si_aumenta=True)
         
         st.metric(
             label="Disponibilidad (MW)",
             value=disp_actual,
-            delta=delta_disp
-        )
+            delta=delta_disp,
+            delta_color=color_disp        )
     
     with col3:
         # Para Demanda Máxima: si aumenta -> flecha arriba roja, si disminuye -> flecha abajo verde
         demanda_actual = pred.get("demanda_maxima", "N/D")
         demanda_anterior = datos_anteriores.get("demanda_maxima", "N/D")
         
-        delta_demanda = None
-        if demanda_actual != "N/D" and demanda_anterior != "N/D":
-            # Para demanda máxima, un aumento es negativo (rojo)
-            delta_demanda = calcular_delta_personalizado(demanda_actual, demanda_anterior, es_bueno_si_aumenta=False)
+        delta_demanda, color_demanda = calcular_delta_y_color(demanda_actual, demanda_anterior, es_bueno_si_aumenta=False)
         
         st.metric(
             label="Demanda Máxima (MW)",
             value=demanda_actual,
             delta=delta_demanda,
-            delta_color="inverse" if delta_demanda and delta_demanda > 0 else "normal"
-        )
+            delta_color=color_demanda        )
     
     with col4:
         # Para Afectación: si aumenta -> flecha arriba roja, si disminuye -> flecha abajo verde
         afect_actual = pred.get("afectacion", "N/D")
         afect_anterior = datos_anteriores.get("afectacion", "N/D")
         
-        delta_afect = None
-        if afect_actual != "N/D" and afect_anterior != "N/D":
-            # Para afectación, un aumento es negativo (rojo)
-            delta_afect = calcular_delta_personalizado(afect_actual, afect_anterior, es_bueno_si_aumenta=False)
+        delta_afect, color_afect = calcular_delta_y_color(afect_actual, afect_anterior, es_bueno_si_aumenta=False)
         
         st.metric(
             label="Afectación (MW)",
             value=afect_actual,
             delta=delta_afect,
-            delta_color="inverse" if delta_afect and delta_afect > 0 else "normal"
+            delta_color=color_afect
         )
     
     

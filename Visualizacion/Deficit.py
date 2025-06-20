@@ -510,47 +510,66 @@ def app():
     if df_completo.empty:
         st.error("No hay datos disponibles para analizar.")
         return
-      # Añadir selector de fechas al inicio
+    
+    # Añadir selector de fechas al inicio
     st.write("### Selecciona el rango de fechas a analizar")
     
     try:
-        fecha_min = df_completo.index.min().date()
-        fecha_max = df_completo.index.max().date()
+        fecha_min_datos = df_completo.index.min().date()
+        fecha_max_datos = df_completo.index.max().date()
     except Exception as e:
         st.error(f"Error al determinar el rango de fechas: {str(e)}")
         return
 
     col1, col2, col3 = st.columns([2, 2, 1])
+    
+    # Inicializar fechas por defecto
+    if 'fecha_inicio_deficit' not in st.session_state:
+        st.session_state.fecha_inicio_deficit = fecha_min_datos
+    if 'fecha_fin_deficit' not in st.session_state:
+        st.session_state.fecha_fin_deficit = fecha_max_datos
+    
     with col1:
         fecha_inicio = st.date_input(
             "Fecha de inicio",
-            value=fecha_min,
-            min_value=fecha_min,
-            max_value=fecha_max,
-            key="fecha_inicio_deficit"
+            value=st.session_state.fecha_inicio_deficit,
+            key="fecha_inicio_deficit_input"
         )
     
     with col2:
-        # Asegurar que la fecha fin no sea anterior a la fecha inicio
-        min_fecha_fin = max(fecha_min, fecha_inicio) if fecha_inicio else fecha_min
         fecha_fin = st.date_input(
             "Fecha de fin",
-            value=fecha_max,
-            min_value=min_fecha_fin,
-            max_value=fecha_max,
-            key="fecha_fin_deficit"
+            value=st.session_state.fecha_fin_deficit,
+            key="fecha_fin_deficit_input"
         )
     
     with col3:
         if st.button("Ver todo", key="ver_todo_deficit"):
-            fecha_inicio = fecha_min
-            fecha_fin = fecha_max
+            st.session_state.fecha_inicio_deficit = fecha_min_datos
+            st.session_state.fecha_fin_deficit = fecha_max_datos
             st.rerun()
     
-    # Validar que el rango de fechas sea válido
+    # Actualizar session state
+    st.session_state.fecha_inicio_deficit = fecha_inicio
+    st.session_state.fecha_fin_deficit = fecha_fin
+    
+    # Validaciones
     if fecha_inicio > fecha_fin:
-        st.error("La fecha de inicio no puede ser posterior a la fecha de fin.")
-        return
+        st.error("❌ La fecha de inicio no puede ser posterior a la fecha de fin.")
+        st.stop()
+    
+    # Verificar que las fechas estén dentro del rango de datos disponibles
+    if fecha_inicio < fecha_min_datos or fecha_fin > fecha_max_datos:
+        st.warning(f"⚠️ Las fechas seleccionadas están fuera del rango de datos disponibles ({fecha_min_datos.strftime('%d/%m/%Y')} - {fecha_max_datos.strftime('%d/%m/%Y')})")
+        
+        # Ajustar automáticamente las fechas al rango válido
+        fecha_inicio_ajustada = max(fecha_inicio, fecha_min_datos)
+        fecha_fin_ajustada = min(fecha_fin, fecha_max_datos)
+        
+        st.info(f"📅 Ajustando automáticamente al rango: {fecha_inicio_ajustada.strftime('%d/%m/%Y')} - {fecha_fin_ajustada.strftime('%d/%m/%Y')}")
+        
+        fecha_inicio = fecha_inicio_ajustada
+        fecha_fin = fecha_fin_ajustada
     
     # Filtrar dataframe según el rango de fechas seleccionado
     inicio_dt = datetime.combine(fecha_inicio, datetime.min.time())
@@ -562,10 +581,10 @@ def app():
     if df.empty:
         st.warning("No hay datos disponibles para el rango de fechas seleccionado.")
         return
-    
-    # Mostrar gráfico principal de déficit con línea de media
+      # Mostrar gráfico principal de déficit con línea de media
     st.write("### Déficit energético en el período seleccionado")
-      # Filtrar valores nulos para cálculos
+    
+    # Filtrar valores nulos para cálculos
     df_deficit_no_nulo = df.dropna(subset=["deficit"])
     
     # Calcular la media del déficit solo de valores presentes
@@ -583,8 +602,7 @@ def app():
         color='red',
         show_markers=False
     )
-    
-    # Añadir línea de media si hay datos
+      # Añadir línea de media si hay datos
     if not pd.isna(deficit_medio) and not df_deficit_no_nulo.empty:
         fig.add_trace(go.Scatter(
             x=[df_deficit_no_nulo.index.min(), df_deficit_no_nulo.index.max()],
@@ -593,6 +611,18 @@ def app():
             name=f'Media: {int(deficit_medio)} MW',
             line=dict(color='black', width=1, dash='dash')
         ))
+    
+    # Añadir línea de demanda si hay datos
+    if 'demanda_maxima' in df.columns:
+        df_demanda_no_nulo = df.dropna(subset=["demanda_maxima"])
+        if not df_demanda_no_nulo.empty:
+            fig.add_trace(go.Scatter(
+                x=df_demanda_no_nulo.index,
+                y=df_demanda_no_nulo['demanda_maxima'],
+                mode='lines',
+                name='Demanda',
+                line=dict(color='black', width=1.5)
+            ))
     # Configurar diseño con límites de Y apropiados para mostrar todos los valores
     y_max = max(2000, int(deficit_max * 1.1)) if deficit_max else 2000  # Asegurar espacio suficiente
     
