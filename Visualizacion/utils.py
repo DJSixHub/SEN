@@ -5,8 +5,6 @@ import numpy as np
 import streamlit as st
 from datetime import datetime, date
 import altair as alt
-
-# Función para cargar todos los datos
 def cargar_datos():
     base_dir = os.path.dirname(__file__)
     ruta = os.path.join(base_dir, os.pardir, "data", "processed", "datos_electricos_organizados.json")
@@ -49,16 +47,6 @@ def preparar_dataframe_basico(entradas):
 
 # Función para filtrar y preparar datos para análisis específicos
 def filtrar_datos_por_metrica(entradas, metrica="deficit"):
-    """
-    Filtra y procesa los datos para un tipo específico de análisis (deficit, disponibilidad, etc.)
-    
-    Args:
-        entradas (list): Lista de registros de datos eléctricos
-        metrica (str): La métrica a extraer y procesar (deficit, disponibilidad, etc.)
-    
-    Returns:
-        pd.DataFrame: DataFrame con datos procesados para análisis de la métrica solicitada
-    """
     filas = []
     for e in entradas:
         # Extraer datos únicamente de la sección "prediccion" del JSON
@@ -145,20 +133,6 @@ def filtrar_datos_por_metrica(entradas, metrica="deficit"):
     return df
 
 # Preparar datos para energía solar
-def preparar_datos_solares(entradas):
-    filas = []
-    for e in entradas:
-        d = e["fecha"]
-        sol = e["datos"].get("paneles_solares", {})
-        filas.append({
-            "fecha": d, 
-            "produccion_mwh": sol.get("produccion_mwh"),
-            "parques": sol.get("cantidad_parques"),
-            "capacidad_instalada": sol.get("capacidad_instalada")
-        })
-    return pd.DataFrame(filas).set_index("fecha").sort_index()
-
-# Importar el estandarizador de nombres de plantas
 from .plant_standardizer import get_canonical_plant_name
 
 # Obtener lista de plantas
@@ -289,7 +263,6 @@ def mostrar_kpis(metricas):
 
 # Función para analizar tendencias
 def analizar_tendencia(df, columna):
-    """Analiza la tendencia de una columna de datos y devuelve un resumen"""
     if df.empty or columna not in df.columns:
         return "No hay datos suficientes para analizar tendencias"
     
@@ -336,16 +309,6 @@ def get_color_palette(n_colors=3, palette_type="sequential"):
 
 # Función para preparar datos para análisis de plantas en relación al déficit
 def preparar_datos_plantas_deficit(df):
-    """
-    Prepara datos para análisis de relación entre plantas en avería y déficit energético
-    
-    Args:
-        df (pd.DataFrame): DataFrame con datos de déficit que incluye la columna 'plantas_averia'
-    
-    Returns:
-        pd.DataFrame: DataFrame con datos de plantas y su relación con el déficit,
-                    o None si no hay datos suficientes
-    """
     if 'plantas_averia' not in df.columns:
         return None
     
@@ -370,16 +333,6 @@ def preparar_datos_plantas_deficit(df):
 
 # Función para analizar distribución temporal de cualquier métrica
 def analizar_distribucion_temporal(df, metrica):
-    """
-    Analiza la distribución temporal de una métrica (déficit, disponibilidad, etc.)
-    
-    Args:
-        df (pd.DataFrame): DataFrame con los datos a analizar
-        metrica (str): Nombre de la columna con la métrica a analizar
-        
-    Returns:
-        tuple: Tuplas de DataFrames con análisis (metrica_por_mes, metrica_por_año_mes)
-    """
     if metrica not in df.columns or df.empty:
         return None, None
     
@@ -445,20 +398,6 @@ def analizar_distribucion_temporal(df, metrica):
 
 # Función para crear gráfico temporal con plotly
 def crear_grafico_linea_plotly(df, x_column, y_column, title=None, color=None, show_markers=False):
-    """
-    Crea un gráfico de línea usando plotly
-    
-    Args:
-        df (pd.DataFrame): DataFrame con los datos
-        x_column (str): Columna para el eje X
-        y_column (str): Columna para el eje Y
-        title (str): Título del gráfico
-        color (str): Color de la línea
-        show_markers (bool): Si se muestran o no los marcadores
-        
-    Returns:
-        plotly.graph_objects.Figure: Figura de plotly
-    """
     import plotly.express as px
     
     # Determinar el modo (con o sin marcadores)

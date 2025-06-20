@@ -1,16 +1,6 @@
-"""
-Módulo para la estandarización de nombres de plantas termoeléctricas del Sistema Eléctrico Nacional.
 
-Este módulo contiene el mapeo manual y las funciones de normalización para asegurar
-que los diferentes nombres utilizados para la misma planta termoeléctrica
-sean estandarizados a un nombre canónico único.
-"""
 
-# Grupos de plantas termoeléctricas principales con sus variaciones de nombres
-# Cada grupo corresponde a una planta real
-# Estos nombres se han agrupado manualmente tras analizar todos los datos
 
-# Lista completa y normalizada de plantas termoeléctricas
 PLANTAS_CANONICAS = [
     "Antonio Guiteras",      # Matanzas
     "Felton",                # Holguín (también conocida como Lidio Ramón Pérez)

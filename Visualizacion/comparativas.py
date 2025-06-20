@@ -10,7 +10,6 @@ from .utils import (
 )
 
 def crear_grafico_comparativo(df, col1, col2, titulo1, titulo2):
-    """Crea un gráfico comparativo entre dos variables."""
     base = alt.Chart(df.reset_index())
     
     linea1 = base.mark_line(color='#5276A7').encode(
@@ -38,7 +37,6 @@ def crear_grafico_comparativo(df, col1, col2, titulo1, titulo2):
     ).interactive()
 
 def crear_heatmap_anual(df, columna, titulo):
-    """Crea un heatmap anual para visualizar patrones temporales."""
     # Añadir columnas de mes y día
     df_heat = df.copy()
     df_heat['mes'] = df_heat.index.month
@@ -64,7 +62,6 @@ def crear_heatmap_anual(df, columna, titulo):
     return heatmap
 
 def app():
-    """Función principal para la página de comparativas."""
     st.header("Comparativas")
     st.markdown("---")
     

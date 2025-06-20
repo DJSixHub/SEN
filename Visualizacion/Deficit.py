@@ -2,40 +2,20 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
-import matplotlib.pyplot as plt  # Añadido para soporte de background_gradient
 from .utils import (
     cargar_datos,
-    preparar_dataframe_basico,
     filtrar_datos_por_metrica,
     preparar_datos_plantas_deficit,
     analizar_distribucion_temporal,
     crear_grafico_linea_plotly,
-    obtener_plantas,
-    datos_estado_plantas
+    obtener_plantas
 )
-from . import mapping
 
 def preparar_dataframe_deficit(entradas):
-    """
-    Prepara un dataframe específicamente diseñado para análisis de déficit con datos
-    extraídos ÚNICAMENTE de la sección 'prediccion' del JSON
-    
-    Args:
-        entradas (list): Lista de registros de datos eléctricos
-    Returns:
-        pd.DataFrame: DataFrame con datos procesados para análisis de déficit
-    """
-    # Utiliza la función centralizada de utils.py para filtrar y procesar datos de déficit
     return filtrar_datos_por_metrica(entradas, "deficit")
 
 def mostrar_indicadores_deficit(df):
-    """
-    Muestra un conjunto de indicadores KPI relacionados con el déficit
-    Args:
-        df (pd.DataFrame): DataFrame con datos de déficit procesados
-    """
     st.subheader("Indicadores Estadísticos del Período")
     
     # Filtrar valores no nulos para cálculos
@@ -123,14 +103,6 @@ def mostrar_indicadores_deficit(df):
         )
 
 def analizar_plantas_deficit(entradas, df):
-    """
-    Realiza un análisis detallado de las plantas y su relación con el déficit energético,
-    mostrando únicamente las métricas específicas de la planta seleccionada (no promedios nacionales)
-    
-    Args:
-        entradas (list): Lista de registros de datos eléctricos originales
-        df (pd.DataFrame): DataFrame con datos de déficit procesados
-    """
     st.subheader("Análisis de Plantas en Avería y su Impacto en el Déficit")
     
     # Preparar datos para análisis de plantas usando la función de utilidad

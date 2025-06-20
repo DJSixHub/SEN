@@ -35,12 +35,12 @@ logger = logging.getLogger("daily_pipeline")
 
 
 class DailyPipeline:
-
+    
     def __init__(
         self,
-        api_key,
-        a,
-        b,
+        api_key=None,
+        a=1,
+        b=2,
         model=None,
         template_path=None,
         data_dir="data",
@@ -58,7 +58,8 @@ class DailyPipeline:
         """
         if a > b:
             raise ValueError("a tiene que ser menor que b")
-        self.api_key = api_key
+          # Use provided API key or try to get from environment variable
+        self.api_key = api_key or os.environ.get("FIREWORKS_API_KEY")
         self.model = model
         self.template_path = template_path or os.path.join(
             os.path.dirname(__file__), "template.txt"
@@ -653,29 +654,32 @@ class DailyPipeline:
                 a=2022,  # Año de inicio
                 b=2025,  # Año final
             )
-
+            
             result = extractor.run_pipeline(
                 delay=2, output_dir=daily_output_dir, save_individual=False
             )
-
+            
             if os.path.exists(temp_csv_path):
                 os.remove(temp_csv_path)
-
+            
             if result == 0:
                 logger.info(f"Extracción JSON completada con éxito para {self.today}")
                 return True
             else:
                 logger.error(f"Error durante la extracción JSON para {self.today}")
                 return False
-
         except Exception as e:
             logger.error(f"Error en el procesamiento de artículos de {self.today}: {e}")
             return False
-
+            
     def run(self, analize_all=False):
         """
         Ejecuta el pipeline completo
         """
+        # Verify that we have a Fireworks API key
+        if not self.api_key:
+            logger.error("API key for Fireworks AI not provided. Set FIREWORKS_API_KEY environment variable or pass api_key parameter.")
+            return False
         if not analize_all:
             logger.info(f"Iniciando pipeline con lookback de {self.days_lookback} días")
 
