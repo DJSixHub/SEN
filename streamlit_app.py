@@ -5,7 +5,7 @@ import importlib
 
 # Configuración de la página
 st.set_page_config(
-    page_title="SENtinel",
+    page_title="SENtinela",
     page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -13,7 +13,7 @@ st.set_page_config(
 
 # Directorio principal
 current_dir = os.path.dirname(os.path.abspath(__file__))
-st.sidebar.title("SENtinel")
+st.sidebar.title("SENtinela")
 st.sidebar.markdown("---")
 
 # Verificar directorio de visualizaciones

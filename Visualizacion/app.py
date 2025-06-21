@@ -7,7 +7,7 @@ from .comparativas import app as comparativas_app
 
 # Configuración de la página
 st.set_page_config(
-    page_title="SENtinel",
+    page_title="SENtinela",
     page_icon=None,
     layout="wide",
     initial_sidebar_state="expanded"
@@ -16,7 +16,7 @@ st.set_page_config(
 # Función principal
 def main():
     # Barra lateral con menú de navegación
-    st.sidebar.title("SENtinel")
+    st.sidebar.title("SENtinela")
     st.sidebar.markdown("---")
     # Opciones de navegación
     menu = st.sidebar.radio("Menu:", ["Inicio", "Déficit", "Disponibilidad", "Comparativas"])

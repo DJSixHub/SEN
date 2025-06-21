@@ -599,9 +599,7 @@ def app():
     deficit_medio = df_deficit_no_nulo['deficit'].mean() if not df_deficit_no_nulo.empty else 0
     deficit_max = df_deficit_no_nulo['deficit'].max() if not df_deficit_no_nulo.empty else 0
     
-    # Mostrar estadísticas antes del gráfico
-    st.info(f"Déficit máximo en el período seleccionado: {int(deficit_max)} MW")
-      # Crear gráfico usando el dataframe filtrado (solo valores no nulos)
+    
     fig = crear_grafico_linea_plotly(
         df=df_deficit_no_nulo,
         x_column=df_deficit_no_nulo.index,

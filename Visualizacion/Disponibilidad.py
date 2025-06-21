@@ -749,10 +749,7 @@ def app():
     disponibilidad_media = df_disponibilidad_no_nulo['disponibilidad'].mean() if not df_disponibilidad_no_nulo.empty else 0
     disponibilidad_max = df_disponibilidad_no_nulo['disponibilidad'].max() if not df_disponibilidad_no_nulo.empty else 0
     
-    # Mostrar estadísticas antes del gráfico
-    st.info(f"Disponibilidad máxima en el período seleccionado: {int(disponibilidad_max)} MW")
     
-    # Crear gráfico usando el dataframe filtrado (solo valores no nulos)
     fig = crear_grafico_linea_plotly(
         df=df_disponibilidad_no_nulo,
         x_column=df_disponibilidad_no_nulo.index,
