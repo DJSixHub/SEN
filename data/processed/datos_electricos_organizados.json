@@ -94255,7 +94255,8 @@
             },
             "tendencia": null
           }
-        }      },
+        }
+      },
       {
         "enlace": "http://www.cubadebate.cu/noticias/2025/05/10/union-electrica-preve-deficit-de-generacion-de-1-400-mw-para-horario-pico-de-este-sabado/",
         "fecha": "2025-05-10 09:15:00",
@@ -94285,13 +94286,17 @@
               {
                 "planta": "CTE Santa Cruz",
                 "unidad": 1,
-                "unidades": [1],
+                "unidades": [
+                  1
+                ],
                 "tipo": ""
               },
               {
                 "planta": "CTE Felton",
                 "unidad": 2,
-                "unidades": [2],
+                "unidades": [
+                  2
+                ],
                 "tipo": ""
               }
             ],
@@ -94299,7 +94304,9 @@
               {
                 "planta": "CTE Santa Cruz",
                 "unidad": 2,
-                "unidades": [2],
+                "unidades": [
+                  2
+                ],
                 "tipo": ""
               },
               {
@@ -94311,13 +94318,17 @@
               {
                 "planta": "CTE Cienfuegos",
                 "unidad": 4,
-                "unidades": [4],
+                "unidades": [
+                  4
+                ],
                 "tipo": ""
               },
               {
                 "planta": "CTE Renté",
                 "unidad": 5,
-                "unidades": [5],
+                "unidades": [
+                  5
+                ],
                 "tipo": ""
               }
             ],
