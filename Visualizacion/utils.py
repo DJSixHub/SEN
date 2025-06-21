@@ -498,17 +498,16 @@ def crear_grafico_linea_plotly(df, x_column, y_column, title=None, color=None, s
         color_discrete_sequence=color_sequence,
         title=title,
     )
-    
-    # Configurar línea sin puntos si no hay marcadores
+      # Configurar línea sin puntos si no hay marcadores
     fig.update_traces(
         mode=mode, 
         line=dict(width=2.5),
-        connectgaps=False  # No conectar líneas a través de gaps
-    )
-      # Mejorar diseño
+        connectgaps=False,  # No conectar líneas a través de gaps
+        showlegend=False    # Ocultar leyenda de la línea principal
+    )# Mejorar diseño
     fig.update_layout(
         height=400,
-        showlegend=False,
+        showlegend=True,  # Permitir leyenda para las líneas adicionales
         xaxis=dict(showgrid=False, showticklabels=False),
         yaxis=dict(showgrid=False, showticklabels=False)
     )
@@ -524,7 +523,7 @@ def crear_grafico_linea_plotly(df, x_column, y_column, title=None, color=None, s
         yaxis_title = str(y_column)
     fig.update_layout(
         height=400,
-        showlegend=False,
+        showlegend=True,  # Permitir leyenda para las líneas adicionales
         xaxis=dict(title=xaxis_title),
         yaxis=dict(title=yaxis_title)
     )
