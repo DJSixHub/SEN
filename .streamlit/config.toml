@@ -6,8 +6,12 @@ textColor="#262730"
 font="sans serif"
 
 [server]
-# En producción, estas opciones deberían ser true para mayor seguridad
-enableXsrfProtection=true
+# Configuración para Hugging Face Spaces
+port = 7860
+address = "0.0.0.0"
+headless = true
+enableXsrfProtection = false
+enableCORS = false
 enableCORS=true
 # Configuración del puerto
 port = 8501
