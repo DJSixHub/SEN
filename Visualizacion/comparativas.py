@@ -76,10 +76,9 @@ def preparar_datos_multivariados(entradas):
     df = pd.DataFrame(filas)
     if not df.empty:
         df = df.set_index("fecha").sort_index()
-        
-        # Calcular variables derivadas con protección para división por cero
-        df['cobertura_pct'] = 0
-        df['deficit_pct'] = 0
+          # Calcular variables derivadas con protección para división por cero
+        df['cobertura_pct'] = 0.0  # Inicializar como float
+        df['deficit_pct'] = 0.0    # Inicializar como float
         
         # Calcular cobertura solo donde demanda > 0
         mask_demanda_valida = df['demanda'] > 0

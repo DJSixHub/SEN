@@ -3,14 +3,24 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-from .utils import (
-    cargar_datos,
-    filtrar_datos_por_metrica,
-    preparar_datos_plantas_deficit,
-    analizar_distribucion_temporal,
-    crear_grafico_linea_plotly,
-    obtener_plantas
-)
+try:
+    from .utils import (
+        cargar_datos,
+        filtrar_datos_por_metrica,
+        preparar_datos_plantas_deficit,
+        analizar_distribucion_temporal,
+        crear_grafico_linea_plotly,
+        obtener_plantas
+    )
+except ImportError:
+    from utils import (
+        cargar_datos,
+        filtrar_datos_por_metrica,
+        preparar_datos_plantas_deficit,
+        analizar_distribucion_temporal,
+        crear_grafico_linea_plotly,
+        obtener_plantas
+    )
 
 def preparar_dataframe_deficit(entradas):
     return filtrar_datos_por_metrica(entradas, "deficit")
@@ -435,44 +445,41 @@ def mostrar_tabla_datos_detallados(df):
     }
     
     # Formatear para mejor visualización y manejo de NaN
-    df_formato = df_mostrar[columnas_disponibles].copy()      # Reemplazar NaN con valores más descriptivos en formato texto
-    for col in df_formato.columns:
-        if col == "enlace":
-            continue
-        # Usar pd.api.types.is_numeric_dtype para mejor compatibilidad
-        if pd.api.types.is_numeric_dtype(df_formato[col]):
-            # Reemplazar NaN con None primero, luego convertir a string
-            df_formato[col] = df_formato[col].fillna("N/D")
-            # Asegurar que los valores numéricos válidos se mantengan como float
-            df_formato[col] = pd.to_numeric(df_formato[col], errors='coerce').fillna("N/D")
+    df_formato = df_mostrar[columnas_disponibles].copy()
+    # Convertir columnas numéricas a float
+    numeric_cols = [c for c in df_formato.columns if pd.api.types.is_numeric_dtype(df_formato[c])]
+    for col in numeric_cols:
+        df_formato[col] = pd.to_numeric(df_formato[col], errors='coerce')    # Renombrar columnas ANTES de crear el Styler
+    df_formato_renamed = df_formato.rename(columns={c: nombres_columnas.get(c, c) for c in df_formato.columns})
     
-    # Mostrar DataFrame
-    st.write(f"Mostrando {len(df_formato)} registros")
+    # Crear Styler para formatear NaN como 'N/D'
+    fmt_dict = {}
+    for orig_col in numeric_cols:
+        new_col = nombres_columnas.get(orig_col, orig_col)
+        if orig_col != 'porcentaje_deficit':
+            fmt_dict[new_col] = (lambda v: f"{v:.0f}" if pd.notna(v) else "N/D")
+        else:
+            fmt_dict[new_col] = (lambda v: f"{v:.1f}%" if pd.notna(v) else "N/D")
     
-    # Convertir enlaces a markdown si están disponibles
-    if "enlace" in df_formato.columns and mostrar_enlaces:
-        df_formato["enlace"] = df_formato["enlace"].apply(
-            lambda x: f"[Ver noticia]({x})" if isinstance(x, str) and x.startswith("http") else ""
-        )
-      # Mostrar la tabla con columnas renombradas y configuración personalizada
+    styled_df = df_formato_renamed.style.format(fmt_dict)
+
+    # Mostrar la tabla estilizada
     st.dataframe(
-        df_formato.rename(columns={c: nombres_columnas.get(c, c) for c in df_formato.columns}), 
-        use_container_width=True,
-        hide_index=True,
+        styled_df,
+        use_container_width=True,        hide_index=True,
         column_config={
-            "Déficit (MW)": st.column_config.NumberColumn(
-                "Déficit (MW)",
-                help="Déficit energético en MW",
-                format="%d",
-                width="medium"
-            )
+            nombres_columnas[c]: st.column_config.NumberColumn(
+                nombres_columnas[c],
+                format="%d" if c!='porcentaje_deficit' else "%.1f%%"
+            ) for c in numeric_cols
         }
     )
-    
-    # Botón para descargar datos
-    # Convertir NaN a string vacío para CSV
-    df_csv = df_mostrar.fillna("")
-    csv = df_csv.to_csv(index=False).encode('utf-8')
+      # Botón para descargar datos
+    # Convertir NaN a string vacío para CSV, pero solo en las columnas, no en el índice
+    df_csv = df_mostrar.copy()
+    for col in df_csv.columns:
+        df_csv[col] = df_csv[col].fillna("")
+    csv = df_csv.to_csv(index=True).encode('utf-8')
     
     st.download_button(
         label="Descargar datos como CSV",

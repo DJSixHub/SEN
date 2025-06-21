@@ -3,14 +3,24 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
-from .utils import (
-    cargar_datos,
-    filtrar_datos_por_metrica,
-    preparar_datos_plantas_disponibilidad,
-    analizar_distribucion_temporal,
-    crear_grafico_linea_plotly,
-    obtener_plantas
-)
+try:
+    from .utils import (
+        cargar_datos,
+        filtrar_datos_por_metrica,
+        preparar_datos_plantas_disponibilidad,
+        analizar_distribucion_temporal,
+        crear_grafico_linea_plotly,
+        obtener_plantas
+    )
+except ImportError:
+    from utils import (
+        cargar_datos,
+        filtrar_datos_por_metrica,
+        preparar_datos_plantas_disponibilidad,
+        analizar_distribucion_temporal,
+        crear_grafico_linea_plotly,
+        obtener_plantas
+    )
 
 def preparar_dataframe_disponibilidad(entradas):
     return filtrar_datos_por_metrica(entradas, "disponibilidad")
@@ -298,8 +308,7 @@ def analizar_plantas_disponibilidad(entradas, df):
                     st.warning("No hay datos de disponibilidad del sistema para esta planta.")
             else:
                 st.warning(f"No se encontraron períodos operativos para {planta_seleccionada}.")
-        
-        # Visualización de frecuencia de disponibilidad por planta
+          # Visualización de frecuencia de disponibilidad por planta
         st.write("### Tiempo operativo por planta")
         
         # Selección del tipo de visualización
@@ -314,58 +323,30 @@ def analizar_plantas_disponibilidad(entradas, df):
             if vista_seleccionada == "Tabla de disponibilidad":
                 st.write("Tiempo operativo por planta:")
                 try:
-                    # Crear una copia para personalizar el formato
-                    df_display = df_operativas.copy()
+                    # Preparar DataFrame para display con nombres de columnas mejorados
+                    nombres_columnas = {
+                        "planta": "Planta",
+                        "días_operativos": "Días Operativos",
+                        "porcentaje_disponibilidad": "% Disponibilidad"
+                    }
                     
-                    # Aplicar estilo con gradiente azul
-                    def aplicar_gradiente_azul(val):
-                        if pd.isna(val):
-                            return ''
-                        max_val = df_display['días_operativos'].max()
-                        min_val = df_display['días_operativos'].min()
-                        if max_val == min_val:
-                            intensity = 0.5
-                        else:
-                            intensity = (val - min_val) / (max_val - min_val)
-                        # Gradiente de azul claro a azul oscuro
-                        red = int(255 * (1 - intensity * 0.7))
-                        green = int(255 * (1 - intensity * 0.3))
-                        blue = int(255)
-                        return f'background-color: rgb({red}, {green}, {blue}); color: #333; font-weight: bold;'
-                    
-                    # Aplicar estilo a la columna de días operativos
-                    styled_df = df_display.style.applymap(
-                        aplicar_gradiente_azul, 
-                        subset=['días_operativos']
-                    ).applymap(
-                        lambda x: 'color: #333; font-weight: bold;' if isinstance(x, str) else '',
-                        subset=['planta']
-                    )
-                    
-                    # Mostrar la tabla estilizada
-                    st.dataframe(
-                        styled_df,
-                        use_container_width=True,
-                        column_config={
-                            "planta": st.column_config.TextColumn(
-                                "Planta Termoeléctrica",
-                                help="Nombre de la planta termoeléctrica",
-                                width="large"
-                            ),
-                            "días_operativos": st.column_config.NumberColumn(
-                                "Días Operativos",
-                                help="Número de días que la planta estuvo disponible",
-                                format="%d días",
-                                width="medium"
-                            ),
-                            "porcentaje_disponibilidad": st.column_config.NumberColumn(
-                                "% Disponibilidad",
-                                help="Porcentaje de tiempo disponible",
-                                format="%.1f%%",
+                    df_display = df_operativas.rename(columns=nombres_columnas)                    # Configurar columnas numéricas con formato
+                    column_config = {}
+                    for orig_col, new_col in nombres_columnas.items():
+                        if orig_col in ["días_operativos", "porcentaje_disponibilidad"]:
+                            fmt = "%d" if orig_col == "días_operativos" else "%.1f%%"
+                            column_config[new_col] = st.column_config.NumberColumn(
+                                new_col,
+                                format=fmt,
                                 width="medium"
                             )
-                        },
-                        hide_index=True
+
+                    # Mostrar la tabla
+                    st.dataframe(
+                        df_display,
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config=column_config
                     )
                 except Exception as e:
                     st.error(f"Error al mostrar tabla: {str(e)}")
@@ -610,44 +591,43 @@ def mostrar_tabla_datos_detallados(df):
         "dia_semana": "Día",
         "enlace": "Enlace al reporte"
     }
-    
-    # Formatear para mejor visualización y manejo de NaN
+      # Formatear para mejor visualización y manejo de NaN
     df_formato = df_mostrar[columnas_disponibles].copy()
+    # Convertir columnas numéricas a float y mantener NaN
+    numeric_cols = [c for c in df_formato.columns if pd.api.types.is_numeric_dtype(df_formato[c])]
+    for col in numeric_cols:
+        df_formato[col] = pd.to_numeric(df_formato[col], errors='coerce')
+
+    # Renombrar columnas ANTES de crear el Styler
+    df_formato_renamed = df_formato.rename(columns={c: nombres_columnas.get(c, c) for c in df_formato.columns})
     
-    # Reemplazar NaN con valores más descriptivos
-    for col in df_formato.columns:
-        if col == "enlace":            continue
-        # Usar pd.api.types.is_numeric_dtype para mejor compatibilidad
-        if pd.api.types.is_numeric_dtype(df_formato[col]):
-            df_formato[col] = df_formato[col].fillna("N/D")
+    # Crear Styler para formatear NaN como 'N/D'
+    fmt_dict = {}
+    for orig_col in numeric_cols:
+        new_col = nombres_columnas.get(orig_col, orig_col)
+        if orig_col != 'porcentaje_deficit':
+            fmt_dict[new_col] = (lambda v: f"{v:.0f}" if pd.notna(v) else "N/D")
+        else:
+            fmt_dict[new_col] = (lambda v: f"{v:.1f}%" if pd.notna(v) else "N/D")
     
-    # Mostrar DataFrame
-    st.write(f"Mostrando {len(df_formato)} registros")
-    
-    # Convertir enlaces a markdown si están disponibles
-    if "enlace" in df_formato.columns and mostrar_enlaces:
-        df_formato["enlace"] = df_formato["enlace"].apply(
-            lambda x: f"[Ver noticia]({x})" if isinstance(x, str) and x.startswith("http") else ""
-        )
-    
-    # Mostrar la tabla con columnas renombradas y configuración personalizada
+    styled_df = df_formato_renamed.style.format(fmt_dict)    # Mostrar la tabla estilizada
     st.dataframe(
-        df_formato.rename(columns={c: nombres_columnas.get(c, c) for c in df_formato.columns}), 
+        styled_df,
         use_container_width=True,
         hide_index=True,
         column_config={
-            "Disponibilidad (MW)": st.column_config.NumberColumn(
-                "Disponibilidad (MW)",
-                help="Disponibilidad de generación en MW",
-                format="%d",
-                width="medium"
-            )
+            nombres_columnas[c]: st.column_config.NumberColumn(
+                nombres_columnas[c],
+                format="%d" if c!='porcentaje_deficit' else "%.1f%%"
+            ) for c in numeric_cols
         }
     )
-    
-    # Botón para descargar datos
-    df_csv = df_mostrar.fillna("")
-    csv = df_csv.to_csv(index=False).encode('utf-8')
+      # Botón para descargar datos
+    # Convertir NaN a string vacío para CSV, pero solo en las columnas, no en el índice
+    df_csv = df_mostrar.copy()
+    for col in df_csv.columns:
+        df_csv[col] = df_csv[col].fillna("")
+    csv = df_csv.to_csv(index=True).encode('utf-8')
     
     st.download_button(
         label="Descargar datos como CSV",

@@ -6,21 +6,6 @@ import streamlit as st
 from datetime import datetime, date
 import altair as alt
 
-# Importar configuración
-import sys
-sys.path.append(os.path.dirname(os.path.dirname(__file__)))
-try:
-    from config import get_data_config
-except ImportError:
-    # Fallback si no se puede importar
-    def get_data_config():
-        return {
-            'use_arrow_backend': False,
-            'numeric_precision': 'float64',
-            'na_representation': None,
-            'string_na_replacement': 'N/D'
-        }
-
 def cargar_datos():
     base_dir = os.path.dirname(__file__)
     ruta = os.path.join(base_dir, os.pardir, "data", "processed", "datos_electricos_organizados.json")
@@ -46,7 +31,7 @@ def eliminar_dias_repetidos(entradas):
             unicas.append(e)
     return unicas
 
-# Función para preparar dataframe básico
+# Función
 def preparar_dataframe_basico(entradas):
     filas = []
     for e in entradas:
@@ -60,14 +45,12 @@ def preparar_dataframe_basico(entradas):
             "respaldo": pred.get("respaldo")
         })
     
-    df = pd.DataFrame(filas).set_index("fecha").sort_index()
-    
-    # Asegurar tipos de datos consistentes
+    df = pd.DataFrame(filas)
     if not df.empty:
-        df = df.replace({pd.NA: None, np.nan: None, float('nan'): None})
-        columnas_numericas = ['afectacion', 'disponibilidad', 'demanda', 'deficit', 'respaldo']
-        for col in columnas_numericas:
-            if col in df.columns:
+        df = df.set_index("fecha").sort_index()
+        # Limpiar datos nulos de forma simple
+        for col in df.columns:
+            if df[col].dtype in ['float64', 'int64']:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
     
     return df
@@ -131,8 +114,7 @@ def filtrar_datos_por_metrica(entradas, metrica="deficit"):
                 "año": e["fecha"].year,
                 "plantas_averia": list(plantas_estandarizadas)
             }
-        elif metrica == "disponibilidad":
-            # Datos específicos para análisis de disponibilidad
+        elif metrica == "disponibilidad":            # Datos específicos para análisis de disponibilidad
             datos_metrica = {
                 "disponibilidad": valor_metrica,
                 "afectacion": pred.get("afectacion"),
@@ -145,25 +127,23 @@ def filtrar_datos_por_metrica(entradas, metrica="deficit"):
         else:
             # Para cualquier otra métrica, simplemente incluimos su valor
             datos_metrica = {metrica: valor_metrica}
-        
-        # Combinar datos básicos con datos específicos de la métrica
+          # Combinar datos básicos con datos específicos de la métrica
         datos_completos = {**datos_basicos, **datos_metrica}
         filas.append(datos_completos)
-      # Crear DataFrame y establecer fecha como índice
+    
+    # Crear DataFrame de forma simple
     df = pd.DataFrame(filas)
     if not df.empty:
         df = df.set_index("fecha").sort_index()
         
-        # Reemplazar todos los tipos de NaN con None para mejor compatibilidad
-        df = df.replace({pd.NA: None, np.nan: None, float('nan'): None})
-          # Convertir columnas numéricas a float64 de forma explícita
+        # Convertir columnas numéricas
         columnas_numericas = ['demanda', 'deficit', 'disponibilidad', 'afectacion', 'respaldo', 'porcentaje_deficit']
         for col in columnas_numericas:
             if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors='coerce').astype('float64')
+                df[col] = pd.to_numeric(df[col], errors='coerce')
         
-        # Agregar columnas de tendencia usando ventanas móviles si existe la métrica
-        if metrica in df.columns:
+        # Agregar columnas de tendencia si existe la métrica
+        if metrica in df.columns and df[metrica].notna().any():
             df[f'{metrica}_7d_avg'] = df[metrica].rolling(window=7, min_periods=1).mean()
             df[f'{metrica}_30d_avg'] = df[metrica].rolling(window=30, min_periods=1).mean()
     
@@ -467,7 +447,7 @@ def analizar_distribucion_temporal(df, metrica):
     
     return metrica_por_mes, metrica_por_año_mes
 
-# Función para crear gráfico temporal con plotly
+# Función para crear gráfico temporal with plotly
 def crear_grafico_linea_plotly(df, x_column, y_column, title=None, color=None, show_markers=False):
     import plotly.express as px
     import plotly.graph_objects as go
@@ -525,48 +505,28 @@ def crear_grafico_linea_plotly(df, x_column, y_column, title=None, color=None, s
         line=dict(width=2.5),
         connectgaps=False  # No conectar líneas a través de gaps
     )
-    
-    # Mejorar diseño
+      # Mejorar diseño
     fig.update_layout(
         height=400,
         showlegend=False,
-        xaxis=dict(title=x_column.replace('_', ' ').title()),
-        yaxis=dict(title=y_column.replace('_', ' ').title())
+        xaxis=dict(showgrid=False, showticklabels=False),
+        yaxis=dict(showgrid=False, showticklabels=False)
+    )
+    
+    # Actualizar diseño con títulos seguros
+    try:
+        xaxis_title = x_column.replace('_', ' ').title()
+    except Exception:
+        xaxis_title = str(x_column)
+    try:
+        yaxis_title = y_column.replace('_', ' ').title()
+    except Exception:
+        yaxis_title = str(y_column)
+    fig.update_layout(
+        height=400,
+        showlegend=False,
+        xaxis=dict(title=xaxis_title),
+        yaxis=dict(title=yaxis_title)
     )
     
     return fig
-
-def debug_datos(df, nombre_dataset="Dataset"):
-    """Función para debuggear problemas con los datos"""
-    import streamlit as st
-    
-    if df.empty:
-        st.error(f"{nombre_dataset}: DataFrame está vacío")
-        return
-    
-    st.write(f"**{nombre_dataset} - Información de debug:**")
-    st.write(f"- Forma: {df.shape}")
-    st.write(f"- Tipos de datos:")
-    
-    for col in df.columns:
-        dtype = df[col].dtype
-        nulos = df[col].isnull().sum()
-        valores_unicos = df[col].nunique()
-        st.write(f"  - {col}: {dtype}, {nulos} nulos, {valores_unicos} valores únicos")
-        
-        # Mostrar algunos valores de ejemplo
-        valores_ejemplo = df[col].dropna().head(3).tolist()
-        st.write(f"    Ejemplos: {valores_ejemplo}")
-    
-    # Verificar problemas comunes
-    problemas = []
-    for col in df.select_dtypes(include=[object]).columns:
-        if col != 'enlace':  # Excluir columna de enlaces
-            valores_problematicos = df[col].apply(lambda x: isinstance(x, str) and ('nan' in str(x).lower() or 'none' in str(x).lower())).sum()
-            if valores_problematicos > 0:
-                problemas.append(f"{col}: {valores_problematicos} valores con 'nan' o 'none' como string")
-    
-    if problemas:
-        st.warning("**Problemas detectados:**")
-        for problema in problemas:
-            st.write(f"- {problema}")
